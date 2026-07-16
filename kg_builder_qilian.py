@@ -271,7 +271,6 @@ class SQLiteSource:
             "crown_base_height_m": pick_column(columns, ["crown_base_height_m", "枝下高/m", "枝下高"]),
             "branch_count": pick_column(columns, ["branch_count", "分枝数"]),
             "health_status": pick_column(columns, ["health_status", "健康状况"]),
-            "volume_m3": pick_column(columns, ["volume_m3", "材积", "蓄积"]),
         }
         if column_map["subplot_id"] is None:
             raise RuntimeError("tree_observations 缺少必要字段：subplot_id/样方号")
@@ -296,7 +295,6 @@ class SQLiteSource:
                 flags.append("missing_height")
             elif height <= 0:
                 flags.append("invalid_height_nonpositive")
-            database_volume = to_float_or_none(row.get(column_map["volume_m3"])) if column_map["volume_m3"] else None
             normalized.append({
                 "subplot_id": subplot_id,
                 "tree_id": tree_id,
@@ -313,8 +311,6 @@ class SQLiteSource:
                 "crown_base_height_m": to_float_or_none(row.get(column_map["crown_base_height_m"]) if column_map["crown_base_height_m"] else None),
                 "branch_count": to_int_or_none(row.get(column_map["branch_count"]) if column_map["branch_count"] else None),
                 "health_status": clean_str(row.get(column_map["health_status"]) if column_map["health_status"] else "", ""),
-                "database_volume_m3": database_volume,
-                "database_volume_status": "unverified_database_field" if database_volume is not None else None,
                 "quality_flags": flags,
             })
         return normalized
@@ -549,7 +545,7 @@ class QilianKGBuilder:
         self.driver.verify_connectivity()
 
     def reset_graph_scope(self) -> None:
-        labels = ["ProtectedArea", "MonitoringPlot", "Subplot", "TreeIndividual", "Taxon", "SurveyEvent", "TreeObservation", "ShrubObservation", "DeadwoodObservation", "DatabaseField", "VariableDefinition", "IndicatorDefinition", "FormulaDefinition", "ModelDefinition", "ToolDefinition", "DiagnosticRule", "CalculationRun", "IndicatorValue", "DiagnosticSignal", "InspectionTask", "FieldObservation", "ValidationResult", "EvidenceSource"]
+        labels = ["ProtectedArea", "MonitoringPlot", "Subplot", "TreeIndividual", "Taxon", "SurveyEvent", "TreeObservation", "ShrubObservation", "DeadwoodObservation", "TopographyContext", "ClimateStation", "ClimateMonthlySummary", "ClimateAnnualSummary", "DatabaseField", "VariableDefinition", "IndicatorDefinition", "FormulaDefinition", "ModelDefinition", "ToolDefinition", "DiagnosticRule", "CalculationRun", "IndicatorValue", "DiagnosticSignal", "InspectionTask", "FieldObservation", "ValidationResult", "EvidenceSource"]
         self.run("""
         MATCH (n)
         WHERE any(label IN labels(n) WHERE label IN $labels)
@@ -577,6 +573,10 @@ class QilianKGBuilder:
             "CREATE CONSTRAINT calculation_run_id IF NOT EXISTS FOR (n:CalculationRun) REQUIRE n.run_id IS UNIQUE",
             "CREATE CONSTRAINT indicator_value_id IF NOT EXISTS FOR (n:IndicatorValue) REQUIRE n.indicator_value_id IS UNIQUE",
             "CREATE CONSTRAINT diagnostic_signal_id IF NOT EXISTS FOR (n:DiagnosticSignal) REQUIRE n.signal_id IS UNIQUE",
+            "CREATE CONSTRAINT topography_context_id IF NOT EXISTS FOR (n:TopographyContext) REQUIRE n.context_id IS UNIQUE",
+            "CREATE CONSTRAINT climate_station_id IF NOT EXISTS FOR (n:ClimateStation) REQUIRE n.station_id IS UNIQUE",
+            "CREATE CONSTRAINT climate_monthly_summary_id IF NOT EXISTS FOR (n:ClimateMonthlySummary) REQUIRE n.summary_id IS UNIQUE",
+            "CREATE CONSTRAINT climate_annual_summary_id IF NOT EXISTS FOR (n:ClimateAnnualSummary) REQUIRE n.summary_id IS UNIQUE",
         ]
         for cypher in constraints:
             self.run(cypher)
@@ -661,8 +661,6 @@ class QilianKGBuilder:
                 "crown_base_height_m": row.get("crown_base_height_m"),
                 "branch_count": row.get("branch_count"),
                 "health_status": row.get("health_status"),
-                "database_volume_m3": row.get("database_volume_m3"),
-                "database_volume_status": row.get("database_volume_status"),
                 "quality_flags": row.get("quality_flags") or [],
                 "data_layer": "observation",
             }
@@ -717,6 +715,113 @@ class QilianKGBuilder:
             MERGE (obs)-[:HAS_TAXON]->(tx)
             MERGE (event)-[:RECORDED_OBSERVATION]->(obs)
             """, survey_event_id=survey_event_id, batch=batch)
+
+    def import_environment_contexts_from_sqlite(self, db_path: Path, monitoring_plot_id: str) -> Dict[str, int]:
+        """导入环境上下文摘要。逐日气候原始值仍留在 SQLite，仅导入站点、月摘要、年摘要和样方地形摘要。"""
+        counts = {"topography_contexts": 0, "climate_stations": 0, "climate_monthly_summaries": 0, "climate_annual_summaries": 0}
+        if not db_path.exists():
+            return counts
+
+        def rows_from(conn: sqlite3.Connection, sql: str) -> List[Dict[str, Any]]:
+            cur = conn.execute(sql)
+            return [dict(row) for row in cur.fetchall()]
+
+        with sqlite3.connect(db_path) as conn:
+            conn.row_factory = sqlite3.Row
+
+            if table_exists(conn, "topography_observations"):
+                rows = rows_from(conn, """
+                    SELECT
+                        subplot_id,
+                        COUNT(*) AS observation_count,
+                        AVG(elevation_m) AS mean_elevation_m,
+                        MIN(elevation_m) AS min_elevation_m,
+                        MAX(elevation_m) AS max_elevation_m,
+                        AVG(slope_degree) AS mean_slope_degree,
+                        MIN(slope_degree) AS min_slope_degree,
+                        MAX(slope_degree) AS max_slope_degree,
+                        AVG(aspect_degree) AS mean_aspect_degree,
+                        COUNT(DISTINCT slope_position) AS slope_position_class_count
+                    FROM topography_observations
+                    WHERE subplot_id IS NOT NULL AND TRIM(subplot_id) <> ''
+                    GROUP BY subplot_id
+                """)
+                topo_rows = []
+                for row in rows:
+                    subplot_id = clean_str(row.get("subplot_id"), "")
+                    if not subplot_id:
+                        continue
+                    topo_rows.append({
+                        **row,
+                        "subplot_id": subplot_id,
+                        "context_id": f"TOPO_SUBPLOT_{subplot_id}",
+                        "context_level": "subplot",
+                        "data_layer": "environment_context_summary",
+                        "source_table": "topography_observations",
+                        "interpretation_boundary": "样方地形摘要来自单木点位或样方内点位聚合，可用于背景和关联分析，不单独构成因果解释。",
+                    })
+                for batch in chunked(topo_rows, self.batch_size):
+                    self.run("""
+                    UNWIND $batch AS row
+                    MATCH (s:Subplot {subplot_id: row.subplot_id})
+                    MERGE (ctx:TopographyContext {context_id: row.context_id})
+                    SET ctx += row
+                    MERGE (s)-[:HAS_TOPOGRAPHY_CONTEXT]->(ctx)
+                    """, batch=batch)
+                counts["topography_contexts"] = len(topo_rows)
+
+            if table_exists(conn, "climate_stations"):
+                station_rows = rows_from(conn, "SELECT * FROM climate_stations WHERE station_id IS NOT NULL AND TRIM(station_id) <> ''")
+                for row in station_rows:
+                    row["data_layer"] = "climate_station_metadata"
+                    row["interpretation_boundary"] = "气象站数据表示研究区气候背景，不等同于样方内微气候实测。"
+                for batch in chunked(station_rows, self.batch_size):
+                    self.run("""
+                    MATCH (mp:MonitoringPlot {monitoring_plot_id: $monitoring_plot_id})
+                    UNWIND $batch AS row
+                    MERGE (st:ClimateStation {station_id: row.station_id})
+                    SET st += row
+                    MERGE (mp)-[:HAS_CLIMATE_BACKGROUND_STATION]->(st)
+                    """, monitoring_plot_id=monitoring_plot_id, batch=batch)
+                counts["climate_stations"] = len(station_rows)
+
+            if table_exists(conn, "climate_monthly_summary"):
+                monthly_rows = rows_from(conn, "SELECT * FROM climate_monthly_summary WHERE station_id IS NOT NULL AND year IS NOT NULL AND month IS NOT NULL")
+                for row in monthly_rows:
+                    row["summary_id"] = f"CLIMATE_MONTH_{row.get('station_id')}_{int(row.get('year'))}_{int(row.get('month')):02d}"
+                    row["temporal_resolution"] = "month"
+                    row["data_layer"] = "climate_summary"
+                    row["source_table"] = "climate_monthly_summary"
+                    row["interpretation_boundary"] = "月气候摘要由逐日站点记录聚合得到，用于气候背景描述和时间序列分析。"
+                for batch in chunked(monthly_rows, self.batch_size):
+                    self.run("""
+                    UNWIND $batch AS row
+                    MERGE (st:ClimateStation {station_id: row.station_id})
+                    MERGE (m:ClimateMonthlySummary {summary_id: row.summary_id})
+                    SET m += row
+                    MERGE (st)-[:HAS_MONTHLY_SUMMARY]->(m)
+                    """, batch=batch)
+                counts["climate_monthly_summaries"] = len(monthly_rows)
+
+            if table_exists(conn, "climate_annual_summary"):
+                annual_rows = rows_from(conn, "SELECT * FROM climate_annual_summary WHERE station_id IS NOT NULL AND year IS NOT NULL")
+                for row in annual_rows:
+                    row["summary_id"] = f"CLIMATE_YEAR_{row.get('station_id')}_{int(row.get('year'))}"
+                    row["temporal_resolution"] = "year"
+                    row["data_layer"] = "climate_summary"
+                    row["source_table"] = "climate_annual_summary"
+                    row["interpretation_boundary"] = "年气候摘要由逐日站点记录聚合得到，用于气候背景描述；不直接代表样方内微气候。"
+                for batch in chunked(annual_rows, self.batch_size):
+                    self.run("""
+                    UNWIND $batch AS row
+                    MERGE (st:ClimateStation {station_id: row.station_id})
+                    MERGE (y:ClimateAnnualSummary {summary_id: row.summary_id})
+                    SET y += row
+                    MERGE (st)-[:HAS_ANNUAL_SUMMARY]->(y)
+                    """, batch=batch)
+                counts["climate_annual_summaries"] = len(annual_rows)
+
+        return counts
 
     def import_default_definitions(self) -> None:
         self.import_field_mappings(DEFAULT_FIELD_MAPPINGS)
@@ -873,7 +978,11 @@ class QilianKGBuilder:
           count { MATCH (:Taxon) } AS taxa,
           count { MATCH (:IndicatorDefinition) } AS indicator_definitions,
           count { MATCH (:IndicatorValue) } AS indicator_values,
-          count { MATCH (:DiagnosticSignal) } AS diagnostic_signals
+          count { MATCH (:DiagnosticSignal) } AS diagnostic_signals,
+          count { MATCH (:TopographyContext) } AS topography_contexts,
+          count { MATCH (:ClimateStation) } AS climate_stations,
+          count { MATCH (:ClimateMonthlySummary) } AS climate_monthly_summaries,
+          count { MATCH (:ClimateAnnualSummary) } AS climate_annual_summaries
         """)
         return rows[0] if rows else {}
 
@@ -942,6 +1051,9 @@ def build_graph(args: argparse.Namespace) -> Dict[str, Any]:
             builder.import_deadwood_observations(bundle.deadwood_rows, args.survey_event_id)
         else:
             print("[Neo4j] 未发现枯死木观测表，跳过。")
+        print("[Neo4j] 导入地形和气候环境上下文摘要...")
+        env_counts = builder.import_environment_contexts_from_sqlite(db_path, args.monitoring_plot_id)
+        print(f"[Neo4j] 环境上下文导入: {env_counts}")
         print("[Neo4j] 导入默认字段、指标、公式和临时诊断规则定义...")
         builder.import_default_definitions()
         if registry_path and registry_path.exists() and not args.skip_registry:
