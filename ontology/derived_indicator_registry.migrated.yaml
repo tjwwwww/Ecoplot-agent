@@ -1,0 +1,946 @@
+﻿version: 0.1
+name: ForestryAgent 公式型派生指标注册表
+status: draft
+updated_at: 2026-07-16
+purpose: >
+  只登记能够由当前数据库字段、明确公式或确定性统计规则计算出来的指标。
+  不登记“树种海拔分布”“地形关联分析”“样方质量诊断”等统计视图或分析任务。
+
+principles:
+  - 指标必须有明确输入字段、公式、尺度、单位和解释边界。
+  - ready 表示当前字段基本具备，可直接计算。
+  - partial 表示可计算，但字段定义、数据质量或解释需要额外说明。
+  - requires_model 表示需要正式模型、参数表或外部校验。
+  - blocked 表示当前缺少关键数据，不能作为可计算指标。
+  - 确定性指标不使用伪置信度；使用 quality_flags、applicability_status 和 evidence_level 表达质量与边界。
+
+reference_groups:
+  - reference_group_id: SAME_SPECIES_MONITORING_PLOT
+    name_cn: 同一树种 + 同一大样地
+    level: monitoring_plot
+    filters: [species]
+    description: 用整个大样地内同一树种作为百分位参考组，适合描述全样地范围内相对大小。
+    quality_flags: [SMALL_REFERENCE_GROUP, MISSING_SPECIES]
+
+  - reference_group_id: SAME_SPECIES_SUBPLOT
+    name_cn: 同一树种 + 同一样方
+    level: subplot
+    filters: [subplot_id, species]
+    description: 用同一样方内同一树种作为参考组；样本量常较小，需标记小样本。
+    quality_flags: [SMALL_REFERENCE_GROUP, MISSING_SPECIES]
+
+  - reference_group_id: SAME_SPECIES_ELEVATION_BAND
+    name_cn: 同一树种 + 相近海拔带
+    level: elevation_band
+    filters: [species, elevation_band]
+    description: 用同树种且处于相近海拔带的个体作为参考组，需要地形数据与海拔带定义。
+    quality_flags: [MISSING_TOPOGRAPHY, SMALL_REFERENCE_GROUP, ELEVATION_BAND_PARAMETER_REQUIRED]
+
+  - reference_group_id: SAME_SPECIES_DBH_CLASS
+    name_cn: 同一树种 + 相近径级
+    level: dbh_class
+    filters: [species, dbh_class]
+    description: 用同树种且处于相近径级的个体作为参考组，适合比较同发育阶段个体的高度或冠幅相对位置。
+    quality_flags: [MISSING_SPECIES, MISSING_TREE_DBH, DBH_CLASS_PARAMETER_REQUIRED, SMALL_REFERENCE_GROUP]
+
+data_sources:
+  tree_observations:
+    level: tree
+    primary_key: tree_id
+    join_keys: [tree_id, subplot_id]
+    fields:
+      tree_id: {unit: none, role: identifier}
+      subplot_id: {unit: none, role: foreign_key}
+      species: {unit: none, role: taxon_name}
+      tree_dbh_cm: {unit: cm, role: raw_variable}
+      tree_height_m: {unit: m, role: raw_variable}
+      tree_x_m: {unit: m, role: coordinate}
+      tree_y_m: {unit: m, role: coordinate}
+      crown_width_mean_m: {unit: m, role: raw_or_intermediate_variable}
+      crown_width_ew_m: {unit: m, role: raw_variable}
+      crown_width_ns_m: {unit: m, role: raw_variable}
+      crown_base_height_m: {unit: m, role: raw_variable}
+      health_status: {unit: none, role: categorical_variable}
+      volume_m3: {unit: m3, role: legacy_model_output}
+  topography_observations:
+    level: tree
+    primary_key: tree_id
+    join_keys: [tree_id]
+    fields:
+      tree_id: {unit: none, role: identifier}
+      elevation_m: {unit: m, role: raw_variable}
+      slope_degree: {unit: degree, role: raw_variable}
+      aspect_degree: {unit: degree, role: raw_variable}
+  climate_daily_normalized:
+    level: station_day
+    primary_key: [station_id, observation_date]
+    fields:
+      station_id: {unit: none, role: identifier}
+      observation_date: {unit: date, role: time}
+      year: {unit: year, role: time}
+      month: {unit: month, role: time}
+      mean_temperature_c: {unit: celsius, role: raw_variable}
+      max_temperature_c: {unit: celsius, role: raw_variable}
+      min_temperature_c: {unit: celsius, role: raw_variable}
+      precipitation_mm: {unit: mm, role: raw_variable}
+      wind_speed_m_s: {unit: m/s, role: raw_variable}
+
+indicator_groups:
+  tree_morphology:
+    name_cn: 单木形态指标
+    level: tree
+    indicators:
+      - indicator_id: TREE_HEIGHT_DIAMETER_RATIO
+        name_cn: 高径比
+        status: ready
+        input_fields: [tree_height_m, tree_dbh_cm]
+        formula: tree_height_m * 100 / tree_dbh_cm
+        output_unit: ratio
+        output_field: height_diameter_ratio
+        evidence_level: formal_calculation
+        applicability_status: requires_positive_dbh_and_height
+        quality_flags: [MISSING_TREE_HEIGHT, MISSING_TREE_DBH, INVALID_TREE_DBH]
+        interpretation_boundary:
+          allowed: 描述树体细长程度。
+          not_allowed: 不能单独判断风折、死亡、病虫害或生长受限原因。
+
+      - indicator_id: TREE_BASAL_AREA
+        name_cn: 单木胸高断面积
+        status: ready
+        input_fields: [tree_dbh_cm]
+        formula: pi * (tree_dbh_cm / 200) ^ 2
+        output_unit: m2
+        output_field: basal_area_m2
+        evidence_level: formal_calculation
+        applicability_status: requires_positive_dbh
+        quality_flags: [MISSING_TREE_DBH, INVALID_TREE_DBH]
+        interpretation_boundary:
+          allowed: 描述单木胸高处横截面积，可用于林分断面积汇总。
+          not_allowed: 不等同于单木材积或生物量。
+
+      - indicator_id: TREE_MEAN_CROWN_WIDTH
+        name_cn: 平均冠幅
+        status: ready
+        input_fields: [crown_width_ew_m, crown_width_ns_m]
+        formula: (crown_width_ew_m + crown_width_ns_m) / 2
+        fallback_input_fields: [crown_width_mean_m]
+        output_unit: m
+        output_field: crown_width_mean_m
+        evidence_level: formal_calculation_or_observed_intermediate
+        applicability_status: requires_crown_width
+        quality_flags: [MISSING_CROWN_WIDTH]
+        interpretation_boundary:
+          allowed: 描述树冠水平扩展大小。
+          not_allowed: 不能单独判断受压、偏冠原因或冠层损伤。
+
+      - indicator_id: TREE_CROWN_AREA
+        name_cn: 冠幅投影面积
+        status: ready
+        input_fields: [crown_width_ew_m, crown_width_ns_m]
+        formula: pi * (crown_width_ew_m / 2) * (crown_width_ns_m / 2)
+        fallback_formula: pi * (crown_width_mean_m / 2) ^ 2
+        output_unit: m2
+        output_field: crown_area_m2
+        evidence_level: calculated_with_shape_assumption
+        applicability_status: requires_crown_width
+        quality_flags: [MISSING_CROWN_WIDTH, CROWN_AREA_ASSUMES_ELLIPSE_OR_CIRCLE]
+        interpretation_boundary:
+          allowed: 近似描述树冠投影面积。
+          not_allowed: 不等同于真实叶面积、光合面积或冠层体积。
+
+      - indicator_id: TREE_CROWN_ASPECT_RATIO
+        name_cn: 冠幅长宽比
+        status: ready
+        input_fields: [crown_width_ew_m, crown_width_ns_m]
+        formula: max(crown_width_ew_m, crown_width_ns_m) / min(crown_width_ew_m, crown_width_ns_m)
+        output_unit: ratio
+        output_field: crown_aspect_ratio
+        evidence_level: formal_calculation
+        applicability_status: requires_positive_ew_and_ns_crown_width
+        quality_flags: [MISSING_CROWN_WIDTH, INVALID_CROWN_WIDTH]
+        interpretation_boundary:
+          allowed: 描述树冠水平形态是否偏长。
+          not_allowed: 不能单独判断偏冠形成原因。
+
+      - indicator_id: TREE_CROWN_ASYMMETRY_RATIO
+        name_cn: 冠幅不对称程度
+        status: ready
+        input_fields: [crown_width_ew_m, crown_width_ns_m]
+        formula: abs(crown_width_ew_m - crown_width_ns_m) / ((crown_width_ew_m + crown_width_ns_m) / 2)
+        output_unit: ratio
+        output_field: crown_asymmetry_ratio
+        evidence_level: formal_calculation
+        applicability_status: requires_positive_ew_and_ns_crown_width
+        quality_flags: [MISSING_CROWN_WIDTH, INVALID_CROWN_WIDTH]
+        interpretation_boundary:
+          allowed: 描述东西向与南北向冠幅差异。
+          not_allowed: 不能单独判断受压方向、光照限制或竞争来源。
+
+      - indicator_id: TREE_CROWN_LENGTH
+        name_cn: 冠长
+        status: partial
+        input_fields: [tree_height_m, crown_base_height_m]
+        formula: tree_height_m - crown_base_height_m
+        output_unit: m
+        output_field: crown_length_m
+        evidence_level: formal_calculation_with_field_definition_check
+        applicability_status: requires_valid_crown_base_height
+        quality_flags: [MISSING_TREE_HEIGHT, MISSING_CROWN_BASE_HEIGHT, INVALID_CROWN_LENGTH, CROWN_BASE_HEIGHT_DEFINITION_REQUIRES_CONFIRMATION]
+        interpretation_boundary:
+          allowed: 在枝下高/冠底高定义一致时描述树冠垂直长度。
+          not_allowed: 字段定义未核实时，不能直接解释为真实活冠长度。
+
+      - indicator_id: TREE_LIVE_CROWN_RATIO
+        name_cn: 活冠率/冠长率
+        status: partial
+        input_fields: [tree_height_m, crown_base_height_m]
+        formula: (tree_height_m - crown_base_height_m) / tree_height_m
+        output_unit: ratio
+        output_field: live_crown_ratio
+        evidence_level: calculated_with_field_definition_check
+        applicability_status: requires_positive_height_and_valid_crown_base_height
+        quality_flags: [MISSING_TREE_HEIGHT, MISSING_CROWN_BASE_HEIGHT, INVALID_CROWN_LENGTH, CROWN_BASE_HEIGHT_DEFINITION_REQUIRES_CONFIRMATION]
+        interpretation_boundary:
+          allowed: 描述树冠垂直长度相对树高的比例。
+          not_allowed: 不能单独判断树势衰退或受压。
+
+      - indicator_id: TREE_DBH_PERCENTILE_WITHIN_REFERENCE_GROUP
+        name_cn: 同树种胸径百分位
+        status: ready
+        input_fields: [tree_dbh_cm, species]
+        parameters: [reference_group_id]
+        formula: percentile_rank(tree_dbh_cm within reference_group)
+        output_unit: percentile
+        output_field: dbh_percentile_within_reference_group
+        evidence_level: relative_statistic
+        applicability_status: requires_species_dbh_and_reference_group
+        default_reference_group: SAME_SPECIES_MONITORING_PLOT
+        allowed_reference_groups: [SAME_SPECIES_MONITORING_PLOT, SAME_SPECIES_SUBPLOT, SAME_SPECIES_ELEVATION_BAND, SAME_SPECIES_DBH_CLASS]
+        quality_flags: [MISSING_TREE_DBH, MISSING_SPECIES, SMALL_REFERENCE_GROUP, REFERENCE_GROUP_REQUIRED]
+        interpretation_boundary:
+          allowed: 描述对象木胸径在指定参考组中的相对大小位置。
+          not_allowed: 不能直接判断树龄、生长优劣原因或立地优劣。
+
+      - indicator_id: TREE_HEIGHT_PERCENTILE_WITHIN_REFERENCE_GROUP
+        name_cn: 同树种树高百分位
+        status: ready
+        input_fields: [tree_height_m, species]
+        parameters: [reference_group_id]
+        formula: percentile_rank(tree_height_m within reference_group)
+        output_unit: percentile
+        output_field: height_percentile_within_reference_group
+        evidence_level: relative_statistic
+        applicability_status: requires_species_height_and_reference_group
+        default_reference_group: SAME_SPECIES_MONITORING_PLOT
+        allowed_reference_groups: [SAME_SPECIES_MONITORING_PLOT, SAME_SPECIES_SUBPLOT, SAME_SPECIES_ELEVATION_BAND, SAME_SPECIES_DBH_CLASS]
+        quality_flags: [MISSING_TREE_HEIGHT, MISSING_SPECIES, SMALL_REFERENCE_GROUP, REFERENCE_GROUP_REQUIRED]
+        interpretation_boundary:
+          allowed: 描述对象木树高在指定参考组中的相对位置。
+          not_allowed: 不能直接判断生长原因、竞争原因或年龄差异。
+
+      - indicator_id: TREE_CROWN_WIDTH_PERCENTILE_WITHIN_REFERENCE_GROUP
+        name_cn: 同树种冠幅百分位
+        status: partial
+        input_fields: [crown_width_mean_m, species]
+        parameters: [reference_group_id]
+        formula: percentile_rank(crown_width_mean_m within reference_group)
+        output_unit: percentile
+        output_field: crown_width_percentile_within_reference_group
+        evidence_level: relative_statistic
+        applicability_status: requires_species_crown_width_and_reference_group
+        default_reference_group: SAME_SPECIES_MONITORING_PLOT
+        allowed_reference_groups: [SAME_SPECIES_MONITORING_PLOT, SAME_SPECIES_SUBPLOT, SAME_SPECIES_ELEVATION_BAND, SAME_SPECIES_DBH_CLASS]
+        quality_flags: [MISSING_CROWN_WIDTH, MISSING_SPECIES, SMALL_REFERENCE_GROUP, REFERENCE_GROUP_REQUIRED]
+        interpretation_boundary:
+          allowed: 描述对象木冠幅在指定参考组中的相对位置。
+          not_allowed: 不能单独判断冠层受压、冠损或生长衰退。
+
+      - indicator_id: TREE_VOLUME
+        name_cn: 单木材积
+        status: requires_model
+        input_fields: [species, tree_dbh_cm, tree_height_m]
+        formula: species_specific_volume_model(tree_dbh_cm, tree_height_m)
+        output_unit: m3
+        output_field: volume_m3
+        evidence_level: model_result_if_validated
+        applicability_status: requires_formally_validated_species_volume_model
+        quality_flags: [VOLUME_MODEL_NOT_FORMALLY_VALIDATED]
+        interpretation_boundary:
+          allowed: 仅在正式材积模型注册并通过核验时输出为模型结果。
+          not_allowed: 当前不能把旧 volume_m3 当作正式核验材积。
+
+  tree_competition:
+    name_cn: 单木空间竞争指标
+    level: tree_neighborhood
+    default_parameters:
+      radius_m: 5
+      neighbor_selection: within_radius
+      nearest_neighbor_k: null
+      edge_correction: none
+      distance_unit: m
+      dbh_unit: cm
+      species_partition: [all_neighbors, conspecific, heterospecific]
+      notes:
+        - 搜索半径、是否只取最近邻、边缘修正和是否按树种分组会改变结果，必须在输出中说明。
+        - 第一版默认不做样方边缘修正，边缘树竞争指标需标记 EDGE_EFFECT_NOT_CORRECTED。
+    indicators:
+      - indicator_id: TREE_NEAREST_NEIGHBOR_DISTANCE
+        name_cn: 最近邻距离
+        status: ready
+        input_fields: [tree_id, tree_x_m, tree_y_m]
+        formula: min(distance(target_tree, neighbor_tree))
+        output_unit: m
+        output_field: nearest_neighbor_distance_m
+        evidence_level: spatial_calculation
+        applicability_status: requires_tree_coordinates
+        quality_flags: [MISSING_TREE_COORDINATE, NO_NEIGHBOR_WITH_COORDINATE]
+        interpretation_boundary:
+          allowed: 描述对象木与最近邻木的空间距离。
+          not_allowed: 不能单独判断竞争强度或生长受限。
+
+      - indicator_id: TREE_NEIGHBOR_COUNT_WITHIN_RADIUS
+        name_cn: 半径内邻木数量
+        status: ready
+        input_fields: [tree_id, tree_x_m, tree_y_m]
+        parameters: [radius_m]
+        formula: count(neighbor_tree where distance_m <= radius_m)
+        output_unit: count
+        output_field: neighbor_count_within_radius
+        evidence_level: spatial_calculation
+        applicability_status: requires_coordinates_and_positive_radius
+        quality_flags: [MISSING_TREE_COORDINATE, RADIUS_PARAMETER_REQUIRED]
+        interpretation_boundary:
+          allowed: 描述对象木周边局部拥挤程度。
+          not_allowed: 不能单独判断真实资源竞争强弱。
+
+      - indicator_id: TREE_LOCAL_DENSITY_WITHIN_RADIUS
+        name_cn: 半径内局部密度
+        status: ready
+        input_fields: [tree_id, tree_x_m, tree_y_m]
+        parameters: [radius_m]
+        formula: neighbor_count_within_radius / (pi * radius_m^2 / 10000)
+        output_unit: stems_per_ha
+        output_field: local_density_stems_per_ha
+        evidence_level: spatial_calculation
+        applicability_status: requires_neighbor_count_and_positive_radius
+        quality_flags: [RADIUS_PARAMETER_REQUIRED, EDGE_EFFECT_NOT_CORRECTED]
+        interpretation_boundary:
+          allowed: 描述局部单位面积邻木密度。
+          not_allowed: 不等同于全样方林分密度。
+
+      - indicator_id: TREE_HEGYI_COMPETITION_INDEX
+        name_cn: Hegyi竞争指数
+        status: ready
+        input_fields: [tree_id, tree_x_m, tree_y_m, tree_dbh_cm]
+        parameters: [radius_m]
+        formula: sum((neighbor_dbh_cm / target_dbh_cm) / distance_m for neighbors within radius_m)
+        output_unit: index
+        output_field: hegyi_competition_index
+        evidence_level: relative_competition_signal
+        applicability_status: requires_positive_target_dbh_coordinates_and_nonzero_distance
+        quality_flags: [MISSING_TREE_DBH, MISSING_TREE_COORDINATE, ZERO_DISTANCE_PAIR, EDGE_EFFECT_NOT_CORRECTED]
+        interpretation_boundary:
+          allowed: 描述邻木大小和距离叠加的相对竞争信号。
+          not_allowed: 不能单独判断死亡风险、受压原因或经营处方。
+
+      - indicator_id: TREE_LARGER_NEIGHBOR_COUNT
+        name_cn: 半径内较大邻木数量
+        status: ready
+        input_fields: [tree_id, tree_x_m, tree_y_m, tree_dbh_cm]
+        parameters: [radius_m]
+        formula: count(neighbor_tree where distance_m <= radius_m and neighbor_dbh_cm > target_dbh_cm)
+        output_unit: count
+        output_field: larger_neighbor_count
+        evidence_level: relative_competition_signal
+        applicability_status: requires_positive_dbh_and_coordinates
+        quality_flags: [MISSING_TREE_DBH, MISSING_TREE_COORDINATE, EDGE_EFFECT_NOT_CORRECTED]
+        interpretation_boundary:
+          allowed: 描述对象木周围较大邻木数量。
+          not_allowed: 不能单独判断冠层受压或生长不良。
+
+      - indicator_id: TREE_LARGER_NEIGHBOR_BASAL_AREA
+        name_cn: 半径内较大邻木断面积和
+        status: ready
+        input_fields: [tree_id, tree_x_m, tree_y_m, tree_dbh_cm]
+        parameters: [radius_m]
+        formula: sum(pi * (neighbor_dbh_cm / 200)^2 for neighbors where distance_m <= radius_m and neighbor_dbh_cm > target_dbh_cm)
+        output_unit: m2
+        output_field: larger_neighbor_basal_area_m2
+        evidence_level: relative_competition_signal
+        applicability_status: requires_positive_dbh_and_coordinates
+        quality_flags: [MISSING_TREE_DBH, MISSING_TREE_COORDINATE, EDGE_EFFECT_NOT_CORRECTED]
+        interpretation_boundary:
+          allowed: 描述周边较大邻木的断面积背景。
+          not_allowed: 不能单独判断冠层受压或生长不良。
+
+      - indicator_id: TREE_NEIGHBOR_MEAN_DBH
+        name_cn: 半径内邻木平均胸径
+        status: ready
+        input_fields: [tree_id, tree_x_m, tree_y_m, tree_dbh_cm]
+        parameters: [radius_m]
+        formula: mean(neighbor_dbh_cm for neighbors within radius_m)
+        output_unit: cm
+        output_field: neighbor_mean_dbh_cm
+        evidence_level: descriptive_statistic
+        applicability_status: requires_neighbor_dbh_and_coordinates
+        quality_flags: [MISSING_TREE_COORDINATE, NO_NEIGHBOR_WITHIN_RADIUS]
+        interpretation_boundary:
+          allowed: 描述对象木邻域内树木平均胸径。
+          not_allowed: 不能直接说明对象木受何种影响。
+
+      - indicator_id: TREE_NEIGHBOR_MEAN_HEIGHT
+        name_cn: 半径内邻木平均树高
+        status: ready
+        input_fields: [tree_id, tree_x_m, tree_y_m, tree_height_m]
+        parameters: [radius_m]
+        formula: mean(neighbor_tree_height_m for neighbors within radius_m)
+        output_unit: m
+        output_field: neighbor_mean_height_m
+        evidence_level: descriptive_statistic
+        applicability_status: requires_neighbor_height_and_coordinates
+        quality_flags: [MISSING_TREE_COORDINATE, NO_NEIGHBOR_WITHIN_RADIUS]
+        interpretation_boundary:
+          allowed: 描述对象木邻域内树木平均树高。
+          not_allowed: 不能直接说明对象木受何种影响。
+
+      - indicator_id: TREE_CONSPECIFIC_NEIGHBOR_RATIO
+        name_cn: 同种邻木比例
+        status: ready
+        input_fields: [tree_id, species, tree_x_m, tree_y_m]
+        parameters: [radius_m]
+        formula: conspecific_neighbor_count / total_neighbor_count within radius_m
+        output_unit: ratio
+        output_field: conspecific_neighbor_ratio
+        evidence_level: descriptive_spatial_composition
+        applicability_status: requires_species_coordinates_and_neighbors
+        quality_flags: [MISSING_SPECIES, MISSING_TREE_COORDINATE, NO_NEIGHBOR_WITHIN_RADIUS]
+        interpretation_boundary:
+          allowed: 描述邻域内同种/异种组成。
+          not_allowed: 不能单独判断种内或种间竞争强弱。
+
+      - indicator_id: TREE_HETEROSPECIFIC_NEIGHBOR_RATIO
+        name_cn: 异种邻木比例
+        status: ready
+        input_fields: [tree_id, species, tree_x_m, tree_y_m]
+        parameters: [radius_m]
+        formula: heterospecific_neighbor_count / total_neighbor_count within radius_m
+        output_unit: ratio
+        output_field: heterospecific_neighbor_ratio
+        evidence_level: descriptive_spatial_composition
+        applicability_status: requires_species_coordinates_and_neighbors
+        quality_flags: [MISSING_SPECIES, MISSING_TREE_COORDINATE, NO_NEIGHBOR_WITHIN_RADIUS, EDGE_EFFECT_NOT_CORRECTED]
+        interpretation_boundary:
+          allowed: 描述邻域内异种邻木比例。
+          not_allowed: 不能单独判断种间竞争强弱或相互作用机制。
+
+      - indicator_id: TREE_NEIGHBOR_BASAL_AREA_WITHIN_RADIUS
+        name_cn: 半径内邻域断面积
+        status: ready
+        input_fields: [tree_id, tree_x_m, tree_y_m, tree_dbh_cm]
+        parameters: [radius_m]
+        formula: sum(pi * (neighbor_dbh_cm / 200)^2 for neighbors where distance_m <= radius_m)
+        output_unit: m2
+        output_field: neighbor_basal_area_m2
+        evidence_level: spatial_calculation
+        applicability_status: requires_neighbor_dbh_and_coordinates
+        quality_flags: [MISSING_TREE_DBH, MISSING_TREE_COORDINATE, NO_NEIGHBOR_WITHIN_RADIUS, EDGE_EFFECT_NOT_CORRECTED]
+        interpretation_boundary:
+          allowed: 描述对象木邻域内邻木断面积总量。
+          not_allowed: 不能单独判断真实资源竞争或冠层压制。
+
+  subplot_stand_structure:
+    name_cn: 样方林分结构指标
+    level: subplot
+    default_parameters:
+      subplot_area_m2: 400
+      subplot_area_ha: 0.04
+    indicators:
+      - indicator_id: SUBPLOT_TREE_COUNT
+        name_cn: 样方乔木总株数
+        status: ready
+        input_fields: [tree_id, subplot_id]
+        formula: count(tree_id where subplot_id = target_subplot_id)
+        output_unit: count
+        output_field: tree_count
+        evidence_level: formal_aggregation
+        applicability_status: requires_subplot_tree_records
+        quality_flags: [NO_TREE_RECORDS]
+
+      - indicator_id: SUBPLOT_SPECIES_COUNT
+        name_cn: 样方树种数
+        status: ready
+        input_fields: [species, subplot_id]
+        formula: count_distinct(species where subplot_id = target_subplot_id and species is not null)
+        output_unit: count
+        output_field: species_count
+        evidence_level: formal_aggregation
+        applicability_status: requires_species_records
+        quality_flags: [MISSING_SPECIES]
+
+      - indicator_id: SUBPLOT_STAND_DENSITY
+        name_cn: 林分密度
+        status: ready
+        input_fields: [tree_id, subplot_id]
+        parameters: [subplot_area_ha]
+        formula: tree_count / subplot_area_ha
+        output_unit: stems_per_ha
+        output_field: stand_density_per_ha
+        evidence_level: formal_calculation
+        applicability_status: requires_subplot_area
+        quality_flags: [NO_TREE_RECORDS, MISSING_SUBPLOT_AREA]
+
+      - indicator_id: SUBPLOT_MEAN_DBH
+        name_cn: 平均胸径
+        status: ready
+        input_fields: [tree_dbh_cm, subplot_id]
+        formula: mean(tree_dbh_cm)
+        output_unit: cm
+        output_field: mean_dbh_cm
+        evidence_level: descriptive_statistic
+        applicability_status: requires_valid_dbh_records
+        quality_flags: [MISSING_TREE_DBH]
+
+      - indicator_id: SUBPLOT_MEAN_HEIGHT
+        name_cn: 平均树高
+        status: ready
+        input_fields: [tree_height_m, subplot_id]
+        formula: mean(tree_height_m)
+        output_unit: m
+        output_field: mean_height_m
+        evidence_level: descriptive_statistic
+        applicability_status: requires_valid_height_records
+        quality_flags: [MISSING_TREE_HEIGHT]
+
+      - indicator_id: SUBPLOT_QUADRATIC_MEAN_DBH
+        name_cn: 平方平均胸径
+        status: ready
+        input_fields: [tree_dbh_cm, subplot_id]
+        formula: sqrt(mean(tree_dbh_cm ^ 2))
+        output_unit: cm
+        output_field: quadratic_mean_dbh_cm
+        evidence_level: formal_calculation
+        applicability_status: requires_valid_dbh_records
+        quality_flags: [MISSING_TREE_DBH]
+
+      - indicator_id: SUBPLOT_TOTAL_BASAL_AREA
+        name_cn: 样方总断面积
+        status: ready
+        input_fields: [tree_dbh_cm, subplot_id]
+        formula: sum(pi * (tree_dbh_cm / 200)^2)
+        output_unit: m2
+        output_field: total_basal_area_m2
+        evidence_level: formal_calculation
+        applicability_status: requires_valid_dbh_records
+        quality_flags: [MISSING_TREE_DBH]
+
+      - indicator_id: SUBPLOT_BASAL_AREA_PER_HA
+        name_cn: 单位面积断面积
+        status: ready
+        input_fields: [tree_dbh_cm, subplot_id]
+        parameters: [subplot_area_ha]
+        formula: total_basal_area_m2 / subplot_area_ha
+        output_unit: m2_per_ha
+        output_field: basal_area_m2_per_ha
+        evidence_level: formal_calculation
+        applicability_status: requires_valid_dbh_records_and_subplot_area
+        quality_flags: [MISSING_TREE_DBH, MISSING_SUBPLOT_AREA]
+
+      - indicator_id: SUBPLOT_DIAMETER_CLASS_DISTRIBUTION
+        name_cn: 径级结构
+        status: ready
+        input_fields: [tree_dbh_cm, subplot_id]
+        parameters: [bin_width_cm]
+        formula: count(tree_id grouped by floor(tree_dbh_cm / bin_width_cm) * bin_width_cm)
+        output_unit: table
+        output_field: diameter_class_distribution
+        evidence_level: grouped_statistic
+        applicability_status: requires_valid_dbh_records_and_bin_width
+        quality_flags: [MISSING_TREE_DBH, BIN_WIDTH_PARAMETER_REQUIRED]
+
+      - indicator_id: SUBPLOT_SPECIES_COMPOSITION
+        name_cn: 树种组成
+        status: ready
+        input_fields: [species, tree_id, subplot_id]
+        formula: count_by_species / total_tree_count
+        output_unit: table_ratio
+        output_field: species_composition
+        evidence_level: grouped_statistic
+        applicability_status: requires_species_records
+        quality_flags: [MISSING_SPECIES]
+
+      - indicator_id: SUBPLOT_SHANNON_INDEX
+        name_cn: Shannon-Wiener多样性指数
+        status: ready
+        input_fields: [species, tree_id, subplot_id]
+        formula: -sum(p_i * ln(p_i))
+        output_unit: index
+        output_field: shannon_index
+        evidence_level: formal_calculation
+        applicability_status: requires_species_abundance
+        quality_flags: [MISSING_SPECIES, LOW_SPECIES_RICHNESS]
+
+      - indicator_id: SUBPLOT_SIMPSON_DIVERSITY_INDEX
+        name_cn: Simpson多样性指数
+        status: ready
+        input_fields: [species, tree_id, subplot_id]
+        formula: 1 - sum(p_i ^ 2)
+        output_unit: index
+        output_field: simpson_diversity_index
+        evidence_level: formal_calculation
+        applicability_status: requires_species_abundance
+        quality_flags: [MISSING_SPECIES, LOW_SPECIES_RICHNESS]
+
+      - indicator_id: SUBPLOT_PIELOU_EVENNESS
+        name_cn: Pielou均匀度指数
+        status: ready
+        input_fields: [species, tree_id, subplot_id]
+        formula: shannon_index / ln(species_count)
+        output_unit: index
+        output_field: pielou_evenness
+        evidence_level: formal_calculation
+        applicability_status: requires_species_count_greater_than_one
+        quality_flags: [MISSING_SPECIES, LOW_SPECIES_RICHNESS]
+
+      - indicator_id: SUBPLOT_DBH_COEFFICIENT_OF_VARIATION
+        name_cn: 胸径变异系数
+        status: ready
+        input_fields: [tree_dbh_cm, subplot_id]
+        formula: stddev(tree_dbh_cm) / mean(tree_dbh_cm)
+        output_unit: ratio
+        output_field: dbh_cv
+        evidence_level: descriptive_statistic
+        applicability_status: requires_at_least_two_valid_dbh_records
+        quality_flags: [MISSING_TREE_DBH, SMALL_SAMPLE_SIZE]
+
+      - indicator_id: SUBPLOT_MIXING_RATIO
+        name_cn: 混交比例
+        status: ready
+        input_fields: [species, tree_id, subplot_id]
+        formula: 1 - max(species_count_i / total_tree_count)
+        output_unit: ratio
+        output_field: mixing_ratio
+        evidence_level: derived_from_species_composition
+        applicability_status: requires_species_composition
+        quality_flags: [MISSING_SPECIES, NO_TREE_RECORDS]
+        interpretation_boundary:
+          allowed: 描述样方树种组成偏离单一优势种的程度。
+          not_allowed: 不等同于复杂混交结构或空间混交指数。
+
+      - indicator_id: SUBPLOT_HIGH_HDR_TREE_RATIO
+        name_cn: 高径比较高个体比例
+        status: partial
+        input_fields: [tree_height_m, tree_dbh_cm, subplot_id]
+        parameters: [hdr_threshold]
+        formula: count(height_diameter_ratio >= hdr_threshold) / total_tree_count
+        output_unit: ratio
+        output_field: high_hdr_tree_ratio
+        evidence_level: threshold_count
+        applicability_status: requires_hdr_and_threshold
+        quality_flags: [MISSING_TREE_HEIGHT, MISSING_TREE_DBH, THRESHOLD_REQUIRES_DOMAIN_CONFIRMATION]
+        interpretation_boundary:
+          allowed: 描述形态细长个体在样方中的比例。
+          not_allowed: 不能直接解释为风折、倒伏或灾害风险比例。
+
+      - indicator_id: SUBPLOT_HIGH_COMPETITION_TREE_RATIO
+        name_cn: 高竞争个体比例
+        status: partial
+        input_fields: [hegyi_competition_index, subplot_id]
+        parameters: [competition_threshold, radius_m]
+        formula: count(hegyi_competition_index >= competition_threshold) / total_tree_count
+        output_unit: ratio
+        output_field: high_competition_tree_ratio
+        evidence_level: threshold_count_on_relative_signal
+        applicability_status: requires_competition_index_and_threshold
+        quality_flags: [COMPETITION_THRESHOLD_REQUIRES_DOMAIN_CONFIRMATION, EDGE_EFFECT_NOT_CORRECTED]
+        interpretation_boundary:
+          allowed: 描述相对竞争信号较高个体的比例。
+          not_allowed: 不能直接解释为受压木比例、死亡风险比例或经营处方。
+
+  topography_derived:
+    name_cn: 地形派生指标
+    level: tree_or_subplot
+    indicators:
+      - indicator_id: TOPOGRAPHY_NORTHNESS
+        name_cn: 坡向北向度
+        status: ready
+        input_fields: [aspect_degree]
+        formula: cos(aspect_degree * pi / 180)
+        output_unit: index
+        output_field: northness
+        evidence_level: formal_transformation
+        applicability_status: requires_valid_aspect_degree
+        quality_flags: [MISSING_ASPECT, INVALID_ASPECT]
+        interpretation_boundary:
+          allowed: 将坡向转换为连续北向程度变量。
+          not_allowed: 不能直接等同于湿润程度或微气候条件。
+
+      - indicator_id: TOPOGRAPHY_EASTNESS
+        name_cn: 坡向东向度
+        status: ready
+        input_fields: [aspect_degree]
+        formula: sin(aspect_degree * pi / 180)
+        output_unit: index
+        output_field: eastness
+        evidence_level: formal_transformation
+        applicability_status: requires_valid_aspect_degree
+        quality_flags: [MISSING_ASPECT, INVALID_ASPECT]
+        interpretation_boundary:
+          allowed: 将坡向转换为连续东向程度变量。
+          not_allowed: 不能直接等同于光照、水分或温度条件。
+
+      - indicator_id: TOPOGRAPHY_ASPECT_CLASS
+        name_cn: 坡向分类
+        status: ready
+        input_fields: [aspect_degree]
+        formula: classify_aspect_to_8_directions(aspect_degree)
+        output_unit: category
+        output_field: aspect_class
+        evidence_level: deterministic_classification
+        applicability_status: requires_valid_aspect_degree
+        quality_flags: [MISSING_ASPECT, INVALID_ASPECT]
+
+      - indicator_id: TOPOGRAPHY_SLOPE_CLASS
+        name_cn: 坡度等级
+        status: ready
+        input_fields: [slope_degree]
+        parameters: [slope_class_breaks]
+        formula: classify_slope(slope_degree, slope_class_breaks)
+        output_unit: category
+        output_field: slope_class
+        evidence_level: deterministic_classification
+        applicability_status: requires_valid_slope_degree_and_class_breaks
+        quality_flags: [MISSING_SLOPE, INVALID_SLOPE, SLOPE_CLASS_BREAKS_REQUIRED]
+        interpretation_boundary:
+          allowed: 将连续坡度转换为分级变量，便于统计和制图。
+          not_allowed: 坡度等级本身不等同于稳定性或水分条件。
+
+      - indicator_id: TOPOGRAPHY_ELEVATION_BAND
+        name_cn: 海拔带
+        status: ready
+        input_fields: [elevation_m]
+        parameters: [elevation_band_width_m, elevation_band_breaks]
+        formula: classify_elevation(elevation_m, elevation_band_width_m or elevation_band_breaks)
+        output_unit: category
+        output_field: elevation_band
+        evidence_level: deterministic_classification
+        applicability_status: requires_valid_elevation_and_band_definition
+        quality_flags: [MISSING_ELEVATION, ELEVATION_BAND_PARAMETER_REQUIRED]
+        interpretation_boundary:
+          allowed: 将连续海拔转换为分组变量，便于参考组和分布统计。
+          not_allowed: 海拔带不直接代表气候、土壤或生境类型。
+
+  climate_background:
+    name_cn: 气候背景指标
+    level: station_period
+    default_parameters:
+      growing_season_months: [5, 6, 7, 8, 9]
+      baseline_period: [1991, 2020]
+      heavy_precipitation_threshold_mm: 25
+      dry_day_threshold_mm: 1
+      frost_threshold_c: 0
+      heat_threshold_c: 30
+      extreme_cold_threshold_c: null
+      extreme_cold_percentile: 5
+      strong_wind_threshold_m_s: null
+    indicators:
+      - indicator_id: CLIMATE_ANNUAL_MEAN_TEMPERATURE
+        name_cn: 年均温
+        status: ready
+        input_fields: [mean_temperature_c, year]
+        formula: mean(mean_temperature_c by year)
+        output_unit: celsius
+        output_field: annual_mean_temperature_c
+        evidence_level: formal_aggregation
+        applicability_status: requires_daily_temperature_records
+        quality_flags: [MISSING_TEMPERATURE_DAYS]
+
+      - indicator_id: CLIMATE_MONTHLY_MEAN_TEMPERATURE
+        name_cn: 月均温
+        status: ready
+        input_fields: [mean_temperature_c, year, month]
+        formula: mean(mean_temperature_c by year, month)
+        output_unit: celsius
+        output_field: monthly_mean_temperature_c
+        evidence_level: formal_aggregation
+        applicability_status: requires_daily_temperature_records
+        quality_flags: [MISSING_TEMPERATURE_DAYS]
+
+      - indicator_id: CLIMATE_ANNUAL_PRECIPITATION
+        name_cn: 年降水量
+        status: ready
+        input_fields: [precipitation_mm, year]
+        formula: sum(precipitation_mm by year)
+        output_unit: mm
+        output_field: annual_precipitation_mm
+        evidence_level: formal_aggregation
+        applicability_status: requires_daily_precipitation_records
+        quality_flags: [MISSING_PRECIPITATION_DAYS, SUSPICIOUS_DAILY_PRECIPITATION_PRESENT]
+        interpretation_boundary:
+          allowed: 汇总全年降水量；异常日值默认保留并标记。
+          not_allowed: 不默认剔除真实观测值。
+
+      - indicator_id: CLIMATE_MONTHLY_PRECIPITATION
+        name_cn: 月降水量
+        status: ready
+        input_fields: [precipitation_mm, year, month]
+        formula: sum(precipitation_mm by year, month)
+        output_unit: mm
+        output_field: monthly_precipitation_mm
+        evidence_level: formal_aggregation
+        applicability_status: requires_daily_precipitation_records
+        quality_flags: [MISSING_PRECIPITATION_DAYS, SUSPICIOUS_DAILY_PRECIPITATION_PRESENT]
+
+      - indicator_id: CLIMATE_GROWING_SEASON_MEAN_TEMPERATURE
+        name_cn: 生长季均温
+        status: ready
+        input_fields: [mean_temperature_c, year, month]
+        parameters: [growing_season_months]
+        formula: mean(mean_temperature_c where month in growing_season_months by year)
+        output_unit: celsius
+        output_field: growing_season_mean_temperature_c
+        evidence_level: formal_aggregation
+        applicability_status: requires_daily_temperature_records_and_month_definition
+        quality_flags: [MISSING_TEMPERATURE_DAYS]
+
+      - indicator_id: CLIMATE_GROWING_SEASON_PRECIPITATION
+        name_cn: 生长季降水量
+        status: ready
+        input_fields: [precipitation_mm, year, month]
+        parameters: [growing_season_months]
+        formula: sum(precipitation_mm where month in growing_season_months by year)
+        output_unit: mm
+        output_field: growing_season_precipitation_mm
+        evidence_level: formal_aggregation
+        applicability_status: requires_daily_precipitation_records_and_month_definition
+        quality_flags: [MISSING_PRECIPITATION_DAYS, SUSPICIOUS_DAILY_PRECIPITATION_PRESENT]
+        interpretation_boundary:
+          allowed: 汇总指定生长季月份降水量；异常日值默认保留并标记。
+          not_allowed: 不默认删除异常降水观测。
+
+      - indicator_id: CLIMATE_TEMPERATURE_ANOMALY
+        name_cn: 温度距平
+        status: ready
+        input_fields: [mean_temperature_c, year, month]
+        parameters: [baseline_period, period_definition]
+        formula: period_mean_temperature - baseline_period_mean_temperature
+        output_unit: celsius
+        output_field: temperature_anomaly_c
+        evidence_level: formal_calculation_against_baseline
+        applicability_status: requires_baseline_records
+        quality_flags: [BASELINE_PERIOD_INCOMPLETE]
+
+      - indicator_id: CLIMATE_PRECIPITATION_ANOMALY
+        name_cn: 降水距平
+        status: ready
+        input_fields: [precipitation_mm, year, month]
+        parameters: [baseline_period, period_definition]
+        formula: period_precipitation - baseline_period_mean_precipitation
+        output_unit: mm
+        output_field: precipitation_anomaly_mm
+        evidence_level: formal_calculation_against_baseline
+        applicability_status: requires_baseline_records
+        quality_flags: [BASELINE_PERIOD_INCOMPLETE, SUSPICIOUS_DAILY_PRECIPITATION_PRESENT]
+
+      - indicator_id: CLIMATE_PRECIPITATION_ANOMALY_PERCENT
+        name_cn: 降水距平百分比
+        status: ready
+        input_fields: [precipitation_mm, year, month]
+        parameters: [baseline_period, period_definition]
+        formula: (period_precipitation - baseline_period_mean_precipitation) / baseline_period_mean_precipitation
+        output_unit: percent
+        output_field: precipitation_anomaly_percent
+        evidence_level: formal_calculation_against_baseline
+        applicability_status: requires_positive_baseline_precipitation
+        quality_flags: [BASELINE_PERIOD_INCOMPLETE, ZERO_BASELINE_PRECIPITATION, SUSPICIOUS_DAILY_PRECIPITATION_PRESENT]
+
+      - indicator_id: CLIMATE_HEAT_DAYS
+        name_cn: 高温日数
+        status: partial
+        input_fields: [max_temperature_c, year]
+        parameters: [heat_threshold_c]
+        formula: count(days where max_temperature_c >= heat_threshold_c)
+        output_unit: days
+        output_field: heat_days
+        evidence_level: threshold_count
+        applicability_status: requires_max_temperature_records_and_threshold
+        quality_flags: [MISSING_MAX_TEMPERATURE, THRESHOLD_REQUIRES_DOMAIN_CONFIRMATION]
+
+      - indicator_id: CLIMATE_FROST_DAYS
+        name_cn: 霜冻日数
+        status: partial
+        input_fields: [min_temperature_c, year]
+        parameters: [frost_threshold_c]
+        formula: count(days where min_temperature_c <= frost_threshold_c)
+        output_unit: days
+        output_field: frost_days
+        evidence_level: threshold_count
+        applicability_status: requires_min_temperature_records_and_threshold
+        quality_flags: [MISSING_MIN_TEMPERATURE, THRESHOLD_REQUIRES_DOMAIN_CONFIRMATION]
+
+      - indicator_id: CLIMATE_HEAVY_PRECIPITATION_DAYS
+        name_cn: 强降水日数
+        status: partial
+        input_fields: [precipitation_mm, year]
+        parameters: [heavy_precipitation_threshold_mm]
+        formula: count(days where precipitation_mm >= heavy_precipitation_threshold_mm)
+        output_unit: days
+        output_field: heavy_precipitation_days
+        evidence_level: threshold_count
+        applicability_status: requires_precipitation_records_and_threshold
+        quality_flags: [MISSING_PRECIPITATION_DAYS, THRESHOLD_REQUIRES_DOMAIN_CONFIRMATION, SUSPICIOUS_DAILY_PRECIPITATION_PRESENT]
+
+      - indicator_id: CLIMATE_MAX_CONSECUTIVE_DRY_DAYS
+        name_cn: 最长连续无降水日数
+        status: ready
+        input_fields: [precipitation_mm, observation_date]
+        parameters: [dry_day_threshold_mm]
+        formula: max_consecutive_count(days where precipitation_mm < dry_day_threshold_mm)
+        output_unit: days
+        output_field: max_consecutive_dry_days
+        evidence_level: sequence_statistic
+        applicability_status: requires_continuous_daily_precipitation_records
+        quality_flags: [MISSING_PRECIPITATION_DAYS, DATE_GAP_PRESENT, THRESHOLD_REQUIRES_DOMAIN_CONFIRMATION]
+
+      - indicator_id: CLIMATE_EXTREME_COLD_DAYS
+        name_cn: 极端低温日数
+        status: partial
+        input_fields: [min_temperature_c, year]
+        parameters: [extreme_cold_threshold_c, extreme_cold_percentile, baseline_period]
+        formula: count(days where min_temperature_c <= threshold_or_percentile_value)
+        output_unit: days
+        output_field: extreme_cold_days
+        evidence_level: threshold_or_percentile_count
+        applicability_status: requires_min_temperature_records_and_threshold_definition
+        quality_flags: [MISSING_MIN_TEMPERATURE, THRESHOLD_REQUIRES_DOMAIN_CONFIRMATION, BASELINE_PERIOD_INCOMPLETE]
+        interpretation_boundary:
+          allowed: 描述低温暴露背景。
+          not_allowed: 不能直接判断单木冻害或死亡原因。
+
+      - indicator_id: CLIMATE_STRONG_WIND_DAYS
+        name_cn: 大风日数
+        status: partial
+        input_fields: [wind_speed_m_s]
+        parameters: [strong_wind_threshold_m_s]
+        formula: count(days where wind_speed_m_s >= strong_wind_threshold_m_s)
+        output_unit: days
+        output_field: strong_wind_days
+        evidence_level: threshold_count
+        applicability_status: requires_wind_records_and_threshold
+        quality_flags: [MISSING_WIND_SPEED, THRESHOLD_REQUIRES_DOMAIN_CONFIRMATION]
+        interpretation_boundary:
+          allowed: 描述区域大风天气背景。
+          not_allowed: 不能直接判断单木风折或倒伏原因。
+
+      - indicator_id: CLIMATE_ANNUAL_MAX_WIND_SPEED
+        name_cn: 年最大风速
+        status: partial
+        input_fields: [wind_speed_m_s, year]
+        formula: max(wind_speed_m_s by year)
+        output_unit: m/s
+        output_field: annual_max_wind_speed_m_s
+        evidence_level: formal_aggregation
+        applicability_status: requires_daily_wind_records
+        quality_flags: [MISSING_WIND_SPEED]
+        interpretation_boundary:
+          allowed: 描述年度风速背景。
+          not_allowed: 如果数据是日均风速，不能等同于最大阵风。

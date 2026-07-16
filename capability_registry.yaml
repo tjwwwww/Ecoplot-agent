@@ -1,0 +1,597 @@
+version: 0.2
+updated_at: 2026-07-16
+registry_type: executable_tool_capability_registry
+principles:
+- 工具能力表只描述可执行工具，不重复定义指标和公式。
+- 指标含义、输入变量和公式应来自 ontology/forestry_knowledge_registry.yaml。
+- 数据表、字段、别名和 join 关系应来自 ontology/data_contract.yaml。
+- 工具可以被智能体自由组合；本文件不把用户问题限制到固定分类。
+- 统计分析和图表生成应服务于问题回答，不应替代证据边界。
+- 对确定性计算不使用伪 confidence；使用 status、quality_flags、applicability_status、evidence_level。
+tools:
+  semantic_and_schema:
+    description: 语义、本体、数据契约和知识图谱辅助工具。用于理解概念、查字段映射、确认关系，不直接替代事实数据查询。
+    items:
+    - tool_id: tool_inspect_ontology_schema
+      status: ready
+      name_cn: 本体结构检索
+      purpose: 查询本体中相关类、变量、指标、公式或规则的定义片段。
+      inputs:
+      - query_concept
+      outputs:
+      - matched_schema_slices
+      - hint
+      boundary:
+      - 本体定义不等于物理数据库字段。
+      - 不能仅凭本体判断某个样方或单木事实是否存在。
+    - tool_id: tool_inspect_data_contract
+      status: ready
+      name_cn: 数据契约检索
+      purpose: 查询业务语义到数据库表、字段、join key 或 KG 路径的映射。
+      inputs:
+      - query_concept
+      outputs:
+      - contracts
+      - routing_hint
+      boundary:
+      - 优先用于决定去哪张表、哪个字段取数。
+      - 字段可用性仍需查询数据库确认。
+    - tool_id: tool_query_kg
+      status: ready
+      name_cn: 知识图谱查询
+      purpose: 查询图谱中的实体关系、语义关系和证据链。
+      inputs:
+      - cypher
+      outputs:
+      - records
+      - record_count
+      boundary:
+      - 只在 data_contract 明确 KG 标签、属性和关系路径时使用。
+      - 不建议用 KG 查询原始数值型大表；优先使用 SQLite/确定性数据工具。
+  data_discovery_and_resolution:
+    description: 面向问题理解和数据可用性检查的工具。用于确认对象、字段、数据源和可分析范围。
+    items:
+    - tool_id: tool_resolve_forest_question
+      status: ready
+      name_cn: 林业问题快速解析
+      purpose: 从自然语言中识别对象、树种、样方、指标和可能的数据需求。
+      inputs:
+      - question
+      outputs:
+      - intent
+      - target
+      - variables
+      - candidate_terms
+      boundary:
+      - 解析结果是候选理解，不是最终事实。
+    - tool_id: tool_inspect_forest_data
+      status: ready
+      name_cn: 森林数据可用性检查
+      purpose: 检查某对象或变量在当前数据库中是否有可用数据。
+      inputs:
+      - target_type
+      - target_name
+      - variables_json
+      outputs:
+      - target_check
+      - data_catalog
+      - availability
+      boundary:
+      - 工具未命中不等于事实不存在，需要检查字段映射、编号格式和数据源。
+    - tool_id: tool_run_forest_analysis_protocol
+      status: ready
+      name_cn: 领域分析协议执行
+      purpose: 执行已有领域分析协议，如样方概况、地形关联、气候背景等。
+      inputs:
+      - protocol
+      - target_type
+      - target_name
+      outputs:
+      - analysis_result
+      - tables
+      - quality_flags
+      boundary:
+      - 协议是常用分析套路，不应限制智能体使用其他基础工具重规划。
+  formula_and_indicator_calculation:
+    description: 公式型指标和领域计算工具。用于计算已注册或已实现的确定性指标。
+    items:
+    - tool_id: tool_execute_neuro_symbolic_formula
+      status: ready_with_degradation
+      name_cn: 神经符号公式执行
+      purpose: 根据公式注册表执行指标计算。
+      inputs:
+      - knowledge_id
+      - data_context
+      outputs:
+      - computed_value
+      - formula_trace
+      - quality_flags
+      boundary:
+      - 公式注册表或输入不完整时应降级，不应拖垮聊天入口。
+      - 只适合已注册公式，不适合临时统计分析。
+    - tool_id: tool_math_calculator
+      status: ready
+      name_cn: 安全数学计算器
+      purpose: 执行简单确定性数学表达式。
+      inputs:
+      - expression
+      - variables
+      outputs:
+      - value
+      boundary:
+      - 只做数学运算，不负责取数和解释。
+    - tool_id: tool_calc_tree_morphology_metrics
+      status: ready
+      name_cn: 单木形态指标计算
+      purpose: 计算高径比、冠幅、冠长、活冠率等单木形态指标。
+      inputs:
+      - subplot_id
+      - tree_id
+      outputs:
+      - tree_morphology_metrics
+      - quality_flags
+      related_indicator_groups:
+      - tree_morphology
+      boundary:
+      - 输出为形态描述或相对关注信号，不直接输出因果或风险结论。
+    - tool_id: tool_calc_hegyi_competition
+      status: ready
+      name_cn: 单木空间竞争指标计算
+      purpose: 基于坐标、胸径和邻木距离计算 Hegyi 与邻域竞争相关指标。
+      inputs:
+      - subplot_id
+      - tree_id
+      - radius_m
+      outputs:
+      - competition_metrics
+      - neighbor_summary
+      - quality_flags
+      related_indicator_groups:
+      - tree_competition
+      boundary:
+      - 竞争指数是相对空间信号，不等同于死亡风险或受压原因。
+      - 边界效应、半径选择和坐标质量需要说明。
+    - tool_id: tool_calc_stand_structure_metrics
+      status: ready
+      name_cn: 样方林分结构指标计算
+      purpose: 计算密度、平均胸径、平均树高、断面积、径级结构等样方结构指标。
+      inputs:
+      - subplot_id
+      outputs:
+      - stand_structure_metrics
+      - quality_flags
+      related_indicator_groups:
+      - subplot_stand_structure
+      boundary:
+      - 指标描述样方结构，不直接给出经营处方。
+    - tool_id: tool_calc_species_diversity_metrics
+      status: ready
+      name_cn: 树种多样性指标计算
+      purpose: 计算树种数、Shannon、Simpson、Pielou 等多样性指标。
+      inputs:
+      - subplot_id
+      outputs:
+      - diversity_metrics
+      - species_composition
+      - quality_flags
+      related_indicator_groups:
+      - subplot_stand_structure
+      boundary:
+      - 多样性指标受样方面积和调查口径影响，比较时需统一范围。
+    - tool_id: tool_calc_volume_metrics
+      status: pending_validation
+      name_cn: 材积指标计算
+      purpose: 基于材积模型或旧字段计算/汇总材积。
+      inputs:
+      - subplot_id
+      outputs:
+      - volume_metrics
+      - model_status
+      - quality_flags
+      boundary:
+      - 材积模型未正式核验时，不应作为正式材积结果展示。
+    - tool_id: tool_calc_deadwood_metrics
+      status: partial
+      name_cn: 枯死木指标计算
+      purpose: 计算枯立木、倒木或健康状态相关汇总。
+      inputs:
+      - subplot_id
+      outputs:
+      - deadwood_metrics
+      - quality_flags
+      boundary:
+      - 取决于数据库是否有完整枯死木字段。
+    - tool_id: tool_calc_shrub_metrics
+      status: partial
+      name_cn: 灌木层指标计算
+      purpose: 计算灌木层相关汇总。
+      inputs:
+      - subplot_id
+      outputs:
+      - shrub_metrics
+      - quality_flags
+      boundary:
+      - 取决于灌木表记录粒度和字段完整性。
+  environment_context:
+    description: 地形和气候背景工具。地形用于局部环境因子和关联分析；气候用于区域背景，不直接解释单木因果。
+    items:
+    - tool_id: tool_get_tree_topography_context
+      status: ready
+      name_cn: 单木地形背景查询
+      purpose: 查询单木对应海拔、坡度、坡向等地形因子。
+      inputs:
+      - tree_id
+      outputs:
+      - elevation_m
+      - slope_degree
+      - aspect_degree
+      - quality_flags
+      boundary:
+      - 地形因子用于描述环境背景或提出假设，不直接证明因果。
+    - tool_id: tool_get_subplot_topography_summary
+      status: ready
+      name_cn: 样方地形摘要查询
+      purpose: 汇总样方内单木点位地形特征。
+      inputs:
+      - subplot_id
+      outputs:
+      - mean_elevation_m
+      - mean_slope_degree
+      - aspect_summary
+      - quality_flags
+      boundary:
+      - 样方地形摘要来自单木点位或样方点位，需说明尺度。
+    - tool_id: tool_get_climate_background_summary
+      status: ready
+      name_cn: 区域气候背景摘要
+      purpose: 查询多年气候、调查年份、生长季温度和降水背景。
+      inputs:
+      - station_id
+      - year
+      - months
+      - baseline_period
+      outputs:
+      - temperature_summary
+      - precipitation_summary
+      - anomaly_summary
+      - quality_flags
+      boundary:
+      - 单站气候代表区域背景，不直接解释样方内单木差异。
+      - 异常单日降水默认保留并标记，不默认剔除。
+  visualization:
+    description: 当前已实现的图表工具。现阶段部分工具仍偏专用，后续应增加参数化通用制图工具。
+    items:
+    - tool_id: tool_plot_subplot_grid_heatmap
+      status: ready
+      name_cn: 样方网格热力图
+      inputs:
+      - metric
+      - aggregation
+      outputs:
+      - html_path
+      - png_path
+      - artifacts
+    - tool_id: tool_plot_size_class_distribution
+      status: ready
+      name_cn: 径级结构图
+      inputs:
+      - subplot_id
+      outputs:
+      - html_path
+      - png_path
+      - artifacts
+    - tool_id: tool_plot_species_composition
+      status: ready
+      name_cn: 树种组成图
+      inputs:
+      - subplot_id
+      outputs:
+      - html_path
+      - png_path
+      - artifacts
+    - tool_id: tool_plot_tree_relationship_scatter
+      status: ready
+      name_cn: 单木变量关系散点图
+      inputs:
+      - subplot_id
+      - x
+      - y
+      - color_by
+      outputs:
+      - html_path
+      - png_path
+      - artifacts
+    - tool_id: tool_plot_group_comparison_boxplot
+      status: ready
+      name_cn: 分组箱线图
+      inputs:
+      - subplot_id
+      - metric
+      - group_by
+      outputs:
+      - html_path
+      - png_path
+      - artifacts
+    - tool_id: tool_plot_tree_spatial_map
+      status: ready
+      name_cn: 单木空间分布图
+      inputs:
+      - subplot_id
+      - color_by
+      - size_by
+      outputs:
+      - html_path
+      - png_path
+      - artifacts
+    - tool_id: tool_plot_subplot_percentile_profile
+      status: ready
+      name_cn: 样方百分位画像
+      inputs:
+      - subplot_id
+      outputs:
+      - html_path
+      - png_path
+      - artifacts
+    - tool_id: tool_plot_climate_time_series
+      status: ready
+      name_cn: 气候时间序列图
+      inputs:
+      - station_id
+      - start_year
+      - end_year
+      - months
+      - baseline_period
+      - quality_policy
+      outputs:
+      - html_path
+      - png_path
+      - artifacts
+      - climate_analysis
+      boundary:
+      - 默认 quality_policy=mark_suspicious，保留异常日值并打标记。
+  report_export:
+    description: 报告导出工具。仅在用户明确要求文档、报告、导出时使用。
+    items:
+    - tool_id: tool_convert_markdown_to_docx
+      status: ready
+      name_cn: Markdown转Word
+      inputs:
+      - markdown_text
+      - output_path
+      outputs:
+      - docx_path
+    - tool_id: tool_convert_markdown_to_pdf
+      status: partial
+      name_cn: Markdown转PDF
+      inputs:
+      - markdown_text
+      - output_path
+      outputs:
+      - pdf_path
+      boundary:
+      - PDF 转换依赖本地环境和字体配置。
+  diagnostic_rules:
+    description: 规则评估工具。当前规则体系未正式完善，结果应保守呈现。
+    items:
+    - tool_id: tool_evaluate_diagnostic_rules
+      status: limited
+      name_cn: 诊断规则评估
+      inputs:
+      - target_type
+      - target_id
+      - indicators
+      outputs:
+      - rule_matches
+      - quality_flags
+      boundary:
+      - 未经正式校验的规则不能输出风险、病虫害或经营处方结论。
+planned_generic_tools:
+- tool_id: tool_list_data_sources
+  status: planned
+  purpose: 列出当前可用数据源、尺度、主键和可关联字段。
+- tool_id: tool_inspect_data_source
+  status: planned
+  purpose: 查看某个数据源字段、单位、缺失情况、样例值。
+- tool_id: tool_query_records
+  status: planned
+  purpose: 通过结构化 filters/columns/limit 查询记录，替代自由 SQL。
+- tool_id: tool_join_records
+  status: planned
+  purpose: 基于白名单 join key 安全关联两张表，例如 tree_id 关联乔木和地形。
+- tool_id: tool_aggregate_records
+  status: planned
+  purpose: 按 group_by 执行 count、mean、sum、min、max、std 等分组统计。
+- tool_id: tool_describe_records
+  status: planned
+  purpose: 对数值字段输出 count、mean、median、min、max、quantile 等描述统计。
+- tool_id: tool_rank_records
+  status: planned
+  purpose: 按某指标或字段排序，找最高、最低或 Top-N 对象。
+- tool_id: tool_correlate_records
+  status: planned
+  purpose: 计算两个数值变量或指标的相关性，输出样本数和适用性标记。
+- tool_id: tool_plot_records
+  status: planned
+  purpose: 基于 records 或 data_source 参数化绘制 bar、line、scatter、box、histogram、map_points。
+analysis_patterns:
+- pattern_id: subplot_overview
+  name_cn: 样方整体分析
+  typical_variables:
+  - subplot_id
+  - species
+  - tree_dbh_cm
+  - tree_height_m
+  - health_status
+  typical_indicators:
+  - SUBPLOT_TREE_COUNT
+  - SUBPLOT_SPECIES_COUNT
+  - SUBPLOT_STAND_DENSITY
+  - SUBPLOT_MEAN_DBH
+  - SUBPLOT_MEAN_HEIGHT
+  - SUBPLOT_BASAL_AREA_PER_HA
+  suggested_tools:
+  - tool_inspect_forest_data
+  - tool_calc_stand_structure_metrics
+  - tool_calc_species_diversity_metrics
+  - tool_plot_size_class_distribution
+  - tool_plot_species_composition
+  boundary:
+  - 输出结构状态、相对比较和数据缺口，不直接给经营处方。
+- pattern_id: tree_profile
+  name_cn: 单木画像分析
+  typical_variables:
+  - tree_id
+  - species
+  - tree_dbh_cm
+  - tree_height_m
+  - crown_width_mean_m
+  - crown_base_height_m
+  - tree_x_m
+  - tree_y_m
+  typical_indicators:
+  - TREE_HEIGHT_DIAMETER_RATIO
+  - TREE_BASAL_AREA
+  - TREE_MEAN_CROWN_WIDTH
+  - TREE_LIVE_CROWN_RATIO
+  - TREE_HEGYI_COMPETITION_INDEX
+  suggested_tools:
+  - tool_inspect_forest_data
+  - tool_calc_tree_morphology_metrics
+  - tool_calc_hegyi_competition
+  - tool_get_tree_topography_context
+  boundary:
+  - 输出观测状态和相对关注信号，不单独判断异常原因。
+- pattern_id: species_topography_association
+  name_cn: 树种与地形关联分析
+  typical_variables:
+  - species
+  - tree_id
+  - elevation_m
+  - slope_degree
+  - aspect_degree
+  suggested_operations:
+  - join_by_tree_id
+  - group_describe
+  - boxplot
+  - scatter
+  suggested_tools:
+  - tool_inspect_data_contract
+  - tool_inspect_forest_data
+  - tool_get_subplot_topography_summary
+  missing_generic_tools:
+  - tool_join_records
+  - tool_aggregate_records
+  - tool_plot_records
+  boundary:
+  - 只能说明分布差异或统计关联，不能直接说明地形造成树种差异。
+- pattern_id: climate_background_analysis
+  name_cn: 气候背景分析
+  typical_variables:
+  - mean_temperature_c
+  - precipitation_mm
+  - year
+  - month
+  typical_indicators:
+  - CLIMATE_GROWING_SEASON_MEAN_TEMPERATURE
+  - CLIMATE_GROWING_SEASON_PRECIPITATION
+  - CLIMATE_TEMPERATURE_ANOMALY
+  - CLIMATE_PRECIPITATION_ANOMALY
+  suggested_tools:
+  - tool_get_climate_background_summary
+  - tool_plot_climate_time_series
+  boundary:
+  - 气候数据用于区域背景分析，不直接解释单木或样方内差异因果。
+indicator_tool_bindings:
+  tree_morphology:
+    executor_tool: tool_calc_tree_morphology_metrics
+    indicator_ids:
+    - TREE_HEIGHT_DIAMETER_RATIO
+    - TREE_BASAL_AREA
+    - TREE_MEAN_CROWN_WIDTH
+    - TREE_CROWN_AREA
+    - TREE_CROWN_ASPECT_RATIO
+    - TREE_CROWN_ASYMMETRY_RATIO
+    - TREE_CROWN_LENGTH
+    - TREE_LIVE_CROWN_RATIO
+    - TREE_DBH_PERCENTILE_WITHIN_REFERENCE_GROUP
+    - TREE_HEIGHT_PERCENTILE_WITHIN_REFERENCE_GROUP
+    - TREE_CROWN_WIDTH_PERCENTILE_WITHIN_REFERENCE_GROUP
+    notes:
+    - 材积 TREE_VOLUME 需要正式材积模型，不默认绑定为正式可用结果。
+  tree_competition:
+    executor_tool: tool_calc_hegyi_competition
+    indicator_ids:
+    - TREE_NEAREST_NEIGHBOR_DISTANCE
+    - TREE_NEIGHBOR_COUNT_WITHIN_RADIUS
+    - TREE_LOCAL_DENSITY_WITHIN_RADIUS
+    - TREE_HEGYI_COMPETITION_INDEX
+    - TREE_LARGER_NEIGHBOR_COUNT
+    - TREE_LARGER_NEIGHBOR_BASAL_AREA
+    - TREE_NEIGHBOR_MEAN_DBH
+    - TREE_NEIGHBOR_MEAN_HEIGHT
+    - TREE_CONSPECIFIC_NEIGHBOR_RATIO
+    - TREE_HETEROSPECIFIC_NEIGHBOR_RATIO
+    - TREE_NEIGHBOR_BASAL_AREA_WITHIN_RADIUS
+    default_parameters:
+      radius_m: 5
+      edge_correction: none
+  subplot_stand_structure:
+    executor_tool: tool_calc_stand_structure_metrics
+    indicator_ids:
+    - SUBPLOT_TREE_COUNT
+    - SUBPLOT_STAND_DENSITY
+    - SUBPLOT_MEAN_DBH
+    - SUBPLOT_MEAN_HEIGHT
+    - SUBPLOT_QUADRATIC_MEAN_DBH
+    - SUBPLOT_TOTAL_BASAL_AREA
+    - SUBPLOT_BASAL_AREA_PER_HA
+    - SUBPLOT_DIAMETER_CLASS_DISTRIBUTION
+    - SUBPLOT_DBH_COEFFICIENT_OF_VARIATION
+    - SUBPLOT_HIGH_HDR_TREE_RATIO
+    - SUBPLOT_HIGH_COMPETITION_TREE_RATIO
+  species_diversity:
+    executor_tool: tool_calc_species_diversity_metrics
+    indicator_ids:
+    - SUBPLOT_SPECIES_COUNT
+    - SUBPLOT_SPECIES_COMPOSITION
+    - SUBPLOT_SHANNON_INDEX
+    - SUBPLOT_SIMPSON_DIVERSITY_INDEX
+    - SUBPLOT_PIELOU_EVENNESS
+    - SUBPLOT_MIXING_RATIO
+  topography_derived:
+    executor_tool: tool_get_subplot_topography_summary
+    indicator_ids:
+    - TOPOGRAPHY_NORTHNESS
+    - TOPOGRAPHY_EASTNESS
+    - TOPOGRAPHY_ASPECT_CLASS
+    - TOPOGRAPHY_SLOPE_CLASS
+    - TOPOGRAPHY_ELEVATION_BAND
+    notes:
+    - 单木地形可通过 tool_get_tree_topography_context 获取，分组统计需要 planned generic tools。
+  climate_background:
+    executor_tool: tool_get_climate_background_summary
+    plot_tool: tool_plot_climate_time_series
+    indicator_ids:
+    - CLIMATE_ANNUAL_MEAN_TEMPERATURE
+    - CLIMATE_MONTHLY_MEAN_TEMPERATURE
+    - CLIMATE_ANNUAL_PRECIPITATION
+    - CLIMATE_MONTHLY_PRECIPITATION
+    - CLIMATE_GROWING_SEASON_MEAN_TEMPERATURE
+    - CLIMATE_GROWING_SEASON_PRECIPITATION
+    - CLIMATE_TEMPERATURE_ANOMALY
+    - CLIMATE_PRECIPITATION_ANOMALY
+    - CLIMATE_PRECIPITATION_ANOMALY_PERCENT
+    - CLIMATE_HEAT_DAYS
+    - CLIMATE_FROST_DAYS
+    - CLIMATE_HEAVY_PRECIPITATION_DAYS
+    - CLIMATE_MAX_CONSECUTIVE_DRY_DAYS
+    - CLIMATE_EXTREME_COLD_DAYS
+    - CLIMATE_STRONG_WIND_DAYS
+    - CLIMATE_ANNUAL_MAX_WIND_SPEED
+    boundary:
+    - 气候指标用于区域背景，不直接解释单木或样方内差异因果。
+  volume_model:
+    executor_tool: tool_calc_volume_metrics
+    indicator_ids:
+    - TREE_VOLUME
+    status: pending_validation

@@ -1,0 +1,1278 @@
+{
+  "subplot_id": "1507",
+  "generated_at": "2026-07-13T14:14:24.447316Z",
+  "duration_s": 0.004,
+  "status": "success",
+  "payload": {
+    "stand_structure": {
+      "subplot_id": "1507",
+      "tool_implemented": "calculate_stand_structure_metrics",
+      "sample_tree_count_n": 55,
+      "subplot_area_ha": 0.04,
+      "metrics": {
+        "stand_density_per_ha": 1375.0,
+        "arithmetic_mean_dbh_cm": 11.31,
+        "quadratic_mean_dbh_dq_cm": 14.75,
+        "mean_height_m": 10.23,
+        "total_basal_area_m2": 0.94,
+        "basal_area_per_ha_m2": 23.5,
+        "dbh_coefficient_of_variation_cv_pct": 84.52,
+        "height_coefficient_of_variation_cv_pct": 64.14
+      },
+      "scientific_note": "平方平均胸径(D_q)严格代表林分断面积均木，为断面积测算与抚育间伐的基准指征。"
+    },
+    "morphology": {
+      "subplot_id": "1507",
+      "tool_implemented": "calculate_tree_morphology_metrics",
+      "total_assessed_trees": 55,
+      "stand_summary": {
+        "mean_height_diameter_ratio_hdr": 104.5,
+        "mean_live_crown_ratio_lcr": 0.586,
+        "mean_branch_count": 0.0,
+        "high_windthrow_risk_tree_count": 44,
+        "high_windthrow_risk_pct": 80.0
+      },
+      "sample_trees": [
+        {
+          "tree_id": "QSL15070050",
+          "species": "红桦",
+          "dbh_cm": 4.9,
+          "height_m": 8.0,
+          "crown_width_m": 2.0,
+          "crown_length_m": 5.4,
+          "live_crown_ratio_lcr": 0.675,
+          "height_diameter_ratio_hdr": 163.3,
+          "crown_diameter_ratio_cdr": 40.8,
+          "branch_count": 0.0,
+          "branch_dbhs_cm": [],
+          "branch_total_basal_area_cm2": 0.0,
+          "wind_load_proxy": 163.3,
+          "windthrow_risk_warning": "高风险(树体细长)"
+        },
+        {
+          "tree_id": "QSL15070041",
+          "species": "红桦",
+          "dbh_cm": 5.8,
+          "height_m": 8.2,
+          "crown_width_m": 2.5,
+          "crown_length_m": 5.2,
+          "live_crown_ratio_lcr": 0.634,
+          "height_diameter_ratio_hdr": 141.4,
+          "crown_diameter_ratio_cdr": 43.1,
+          "branch_count": 0.0,
+          "branch_dbhs_cm": [],
+          "branch_total_basal_area_cm2": 0.0,
+          "wind_load_proxy": 141.4,
+          "windthrow_risk_warning": "高风险(树体细长)"
+        },
+        {
+          "tree_id": "QSL15070014",
+          "species": "乌柳",
+          "dbh_cm": 1.4,
+          "height_m": 3.5,
+          "crown_width_m": 2.5,
+          "crown_length_m": 1.3,
+          "live_crown_ratio_lcr": 0.371,
+          "height_diameter_ratio_hdr": 250.0,
+          "crown_diameter_ratio_cdr": 178.6,
+          "branch_count": 0.0,
+          "branch_dbhs_cm": [],
+          "branch_total_basal_area_cm2": 0.0,
+          "wind_load_proxy": 250.0,
+          "windthrow_risk_warning": "高风险(树体细长)"
+        },
+        {
+          "tree_id": "QSL15070026",
+          "species": "红桦",
+          "dbh_cm": 3.4,
+          "height_m": 4.8,
+          "crown_width_m": 2.0,
+          "crown_length_m": 3.5,
+          "live_crown_ratio_lcr": 0.729,
+          "height_diameter_ratio_hdr": 141.2,
+          "crown_diameter_ratio_cdr": 58.8,
+          "branch_count": 0.0,
+          "branch_dbhs_cm": [],
+          "branch_total_basal_area_cm2": 0.0,
+          "wind_load_proxy": 141.2,
+          "windthrow_risk_warning": "高风险(树体细长)"
+        },
+        {
+          "tree_id": "QSL15070017",
+          "species": "红桦",
+          "dbh_cm": 3.5,
+          "height_m": 5.0,
+          "crown_width_m": 2.5,
+          "crown_length_m": 3.2,
+          "live_crown_ratio_lcr": 0.64,
+          "height_diameter_ratio_hdr": 142.9,
+          "crown_diameter_ratio_cdr": 71.4,
+          "branch_count": 0.0,
+          "branch_dbhs_cm": [],
+          "branch_total_basal_area_cm2": 0.0,
+          "wind_load_proxy": 142.9,
+          "windthrow_risk_warning": "高风险(树体细长)"
+        }
+      ],
+      "diagnostic_rule_applied": "DiagnosticRule: 结合高径比(HDR)与实测分枝数(Branch Count/分支胸径)，准确测算单木树冠迎风风阻与截雪荷载极限；HDR > 80.0 且分枝数 >= 4 判为极高风折风险代理靶木。"
+    },
+    "volume": {
+      "subplot_id": "1507",
+      "tool_implemented": "calculate_volume_metrics",
+      "model_reference": {
+        "model_id": "qinghai_spruce_two_variable_volume_table_v1",
+        "model_type": "EmpiricalLookupModel (二元经验材积表矩阵)",
+        "applicable_taxa": [
+          "青海云杉",
+          "山杨",
+          "白桦",
+          "祁连圆柏",
+          "花楸",
+          "乌柳"
+        ],
+        "lookup_method": "direct_cell_or_bilinear_interpolation"
+      },
+      "volume_outputs": {
+        "total_subplot_volume_m3": 7.361,
+        "volume_per_ha_m3": 184.02,
+        "species_volume_m3": {
+          "红桦": 0.67,
+          "乌柳": 0.041,
+          "青海云杉": 6.492,
+          "花楸": 0.002,
+          "白桦": 0.156
+        },
+        "species_volume_composition_pct": {
+          "红桦": 9.1,
+          "乌柳": 0.6,
+          "青海云杉": 88.2,
+          "花楸": 0.0,
+          "白桦": 2.1
+        }
+      }
+    },
+    "diversity": {
+      "status": "success",
+      "target": {
+        "subplot_id": "1507",
+        "survey_event_id": "EVENT_2023",
+        "vegetation_layer": "tree"
+      },
+      "tool": {
+        "tool_id": "calculate_species_diversity_metrics",
+        "tool_version": "1.0.0"
+      },
+      "calculation_basis": {
+        "abundance_basis": "stem_count",
+        "logarithm_base": "e",
+        "unknown_taxon_policy": "exclude"
+      },
+      "input_summary": {
+        "total_record_count": 55,
+        "valid_tree_count": 55,
+        "unknown_taxon_count": 0,
+        "taxon_completeness": 1.0
+      },
+      "indicator_values": {
+        "tree_species_richness": 5,
+        "tree_shannon_stem_based": 1.230752,
+        "tree_simpson_1_minus_lambda": 0.656529,
+        "tree_pielou_evenness_stem_based": 0.764709,
+        "dominant_species_stem_proportion": 0.454545
+      },
+      "intermediate_values": {
+        "species_stem_counts": {
+          "TAXON_红桦": 19,
+          "TAXON_乌柳": 6,
+          "TAXON_青海云杉": 25,
+          "TAXON_花楸": 1,
+          "TAXON_白桦": 4
+        },
+        "species_relative_abundance": {
+          "TAXON_红桦": 0.345455,
+          "TAXON_乌柳": 0.109091,
+          "TAXON_青海云杉": 0.454545,
+          "TAXON_花楸": 0.018182,
+          "TAXON_白桦": 0.072727
+        },
+        "dominant_species": [
+          {
+            "taxon_id": "TAXON_青海云杉",
+            "accepted_name_cn": "青海云杉"
+          }
+        ],
+        "dominance_tie": false
+      },
+      "formula_ids": [
+        "F_SPECIES_RELATIVE_ABUNDANCE_STEM_V1",
+        "F_SPECIES_RICHNESS_V1",
+        "F_SHANNON_STEM_V1",
+        "F_SIMPSON_1_MINUS_LAMBDA_V1",
+        "F_PIELOU_EVENNESS_STEM_V1",
+        "F_DOMINANT_SPECIES_STEM_PROPORTION_V1"
+      ],
+      "quality_flags": []
+    },
+    "deadwood": {
+      "subplot_id": "1507",
+      "tool_implemented": "calculate_deadwood_metrics",
+      "deadwood_metrics": {
+        "total_deadwood_count": 3,
+        "deadwood_density_per_ha": 75.0,
+        "standing_dead_ratio_P_standing": 0.33,
+        "fallen_dead_ratio_P_fallen": 0.67,
+        "deadwood_species_composition": {
+          "乌柳": 1,
+          "白桦": 2
+        }
+      }
+    },
+    "tree_metrics": [
+      {
+        "tree_id": "QSL15070050",
+        "species": "红桦",
+        "dbh_cm": 4.9,
+        "height_m": 8.0,
+        "x_m": 4110835.166,
+        "y_m": 535442.189,
+        "computed_volume_m3": 0.008736,
+        "legacy_volume_m3": 0.0,
+        "computed_basal_area_m2": 0.001886,
+        "hdr": 163.27,
+        "quality_flag": null
+      },
+      {
+        "tree_id": "QSL15070041",
+        "species": "红桦",
+        "dbh_cm": 5.8,
+        "height_m": 8.2,
+        "x_m": 4110831.836,
+        "y_m": 535441.446,
+        "computed_volume_m3": 0.012213,
+        "legacy_volume_m3": 0.1908,
+        "computed_basal_area_m2": 0.002642,
+        "hdr": 141.38,
+        "quality_flag": null
+      },
+      {
+        "tree_id": "QSL15070014",
+        "species": "乌柳",
+        "dbh_cm": 1.4,
+        "height_m": 3.5,
+        "x_m": 4110821.164,
+        "y_m": 535442.62,
+        "computed_volume_m3": 0.000373,
+        "legacy_volume_m3": 0.0,
+        "computed_basal_area_m2": 0.000154,
+        "hdr": 250.0,
+        "quality_flag": null
+      },
+      {
+        "tree_id": "QSL15070026",
+        "species": "红桦",
+        "dbh_cm": 3.4,
+        "height_m": 4.8,
+        "x_m": 4110826.87,
+        "y_m": 535448.862,
+        "computed_volume_m3": 0.002677,
+        "legacy_volume_m3": 0.0,
+        "computed_basal_area_m2": 0.000908,
+        "hdr": 141.18,
+        "quality_flag": null
+      },
+      {
+        "tree_id": "QSL15070017",
+        "species": "红桦",
+        "dbh_cm": 3.5,
+        "height_m": 5.0,
+        "x_m": 4110824.714,
+        "y_m": 535444.461,
+        "computed_volume_m3": 0.002942,
+        "legacy_volume_m3": 0.0,
+        "computed_basal_area_m2": 0.000962,
+        "hdr": 142.86,
+        "quality_flag": null
+      },
+      {
+        "tree_id": "QSL15070052",
+        "species": "青海云杉",
+        "dbh_cm": 5.9,
+        "height_m": 6.0,
+        "x_m": 4110836.67,
+        "y_m": 535441.813,
+        "computed_volume_m3": 0.009042,
+        "legacy_volume_m3": 2.403,
+        "computed_basal_area_m2": 0.002734,
+        "hdr": 101.69,
+        "quality_flag": null
+      },
+      {
+        "tree_id": "QSL15070004",
+        "species": "乌柳",
+        "dbh_cm": 4.9,
+        "height_m": 4.8,
+        "x_m": 4110826.248,
+        "y_m": 535457.555,
+        "computed_volume_m3": 0.004913,
+        "legacy_volume_m3": 0.0,
+        "computed_basal_area_m2": 0.001886,
+        "hdr": 97.96,
+        "quality_flag": null
+      },
+      {
+        "tree_id": "QSL15070018",
+        "species": "花楸",
+        "dbh_cm": 3.5,
+        "height_m": 4.0,
+        "x_m": 4110828.093,
+        "y_m": 535446.342,
+        "computed_volume_m3": 0.002235,
+        "legacy_volume_m3": 0.0,
+        "computed_basal_area_m2": 0.000962,
+        "hdr": 114.29,
+        "quality_flag": null
+      },
+      {
+        "tree_id": "QSL15070053",
+        "species": "青海云杉",
+        "dbh_cm": 2.1,
+        "height_m": 2.9,
+        "x_m": 4110837.035,
+        "y_m": 535440.888,
+        "computed_volume_m3": 0.000687,
+        "legacy_volume_m3": 0.0,
+        "computed_basal_area_m2": 0.000346,
+        "hdr": 138.1,
+        "quality_flag": null
+      },
+      {
+        "tree_id": "QSL15070038",
+        "species": "青海云杉",
+        "dbh_cm": 5.3,
+        "height_m": 5.4,
+        "x_m": 4110833.13,
+        "y_m": 535446.109,
+        "computed_volume_m3": 0.006718,
+        "legacy_volume_m3": 2.2601,
+        "computed_basal_area_m2": 0.002206,
+        "hdr": 101.89,
+        "quality_flag": null
+      },
+      {
+        "tree_id": "QSL15070002",
+        "species": "青海云杉",
+        "dbh_cm": 12.8,
+        "height_m": 7.5,
+        "x_m": 4110835.742,
+        "y_m": 535456.329,
+        "computed_volume_m3": 0.045483,
+        "legacy_volume_m3": 1.5866,
+        "computed_basal_area_m2": 0.012868,
+        "hdr": 58.59,
+        "quality_flag": null
+      },
+      {
+        "tree_id": "QSL15070022",
+        "species": "青海云杉",
+        "dbh_cm": 35.4,
+        "height_m": 21.0,
+        "x_m": 4110825.416,
+        "y_m": 535439.012,
+        "computed_volume_m3": 0.784164,
+        "legacy_volume_m3": 27.4344,
+        "computed_basal_area_m2": 0.098423,
+        "hdr": 59.32,
+        "quality_flag": null
+      },
+      {
+        "tree_id": "QSL15070019",
+        "species": "青海云杉",
+        "dbh_cm": 21.7,
+        "height_m": 16.0,
+        "x_m": 4110824.224,
+        "y_m": 535445.49,
+        "computed_volume_m3": 0.248357,
+        "legacy_volume_m3": 16.3096,
+        "computed_basal_area_m2": 0.036984,
+        "hdr": 73.73,
+        "quality_flag": null
+      },
+      {
+        "tree_id": "QSL15070008",
+        "species": "红桦",
+        "dbh_cm": 10.0,
+        "height_m": 9.0,
+        "x_m": 4110821.338,
+        "y_m": 535456.647,
+        "computed_volume_m3": 0.036535,
+        "legacy_volume_m3": 2.205,
+        "computed_basal_area_m2": 0.007854,
+        "hdr": 90.0,
+        "quality_flag": null
+      },
+      {
+        "tree_id": "QSL15070003",
+        "species": "红桦",
+        "dbh_cm": 7.7,
+        "height_m": 7.5,
+        "x_m": 4110826.128,
+        "y_m": 535457.867,
+        "computed_volume_m3": 0.018824,
+        "legacy_volume_m3": 1.3175,
+        "computed_basal_area_m2": 0.004657,
+        "hdr": 97.4,
+        "quality_flag": null
+      },
+      {
+        "tree_id": "QSL15070012",
+        "species": "青海云杉",
+        "dbh_cm": 29.3,
+        "height_m": 21.0,
+        "x_m": 4110822.875,
+        "y_m": 535446.669,
+        "computed_volume_m3": 0.557697,
+        "legacy_volume_m3": 58.3528,
+        "computed_basal_area_m2": 0.067426,
+        "hdr": 71.67,
+        "quality_flag": null
+      },
+      {
+        "tree_id": "QSL15070046",
+        "species": "青海云杉",
+        "dbh_cm": 8.1,
+        "height_m": 6.5,
+        "x_m": 4110834.749,
+        "y_m": 535443.971,
+        "computed_volume_m3": 0.017319,
+        "legacy_volume_m3": 3.4783,
+        "computed_basal_area_m2": 0.005153,
+        "hdr": 80.25,
+        "quality_flag": null
+      },
+      {
+        "tree_id": "QSL15070027",
+        "species": "青海云杉",
+        "dbh_cm": 6.1,
+        "height_m": 4.8,
+        "x_m": 4110827.903,
+        "y_m": 535449.757,
+        "computed_volume_m3": 0.007707,
+        "legacy_volume_m3": 2.0854,
+        "computed_basal_area_m2": 0.002922,
+        "hdr": 78.69,
+        "quality_flag": null
+      },
+      {
+        "tree_id": "QSL15070043",
+        "species": "青海云杉",
+        "dbh_cm": 6.6,
+        "height_m": 6.0,
+        "x_m": 4110832.063,
+        "y_m": 535443.023,
+        "computed_volume_m3": 0.011067,
+        "legacy_volume_m3": 3.7136,
+        "computed_basal_area_m2": 0.003421,
+        "hdr": 90.91,
+        "quality_flag": null
+      },
+      {
+        "tree_id": "QSL15070054",
+        "species": "青海云杉",
+        "dbh_cm": 6.2,
+        "height_m": 4.2,
+        "x_m": 4110835.885,
+        "y_m": 535440.263,
+        "computed_volume_m3": 0.006958,
+        "legacy_volume_m3": 1.2847,
+        "computed_basal_area_m2": 0.003019,
+        "hdr": 67.74,
+        "quality_flag": null
+      },
+      {
+        "tree_id": "QSL15070029",
+        "species": "白桦",
+        "dbh_cm": 13.1,
+        "height_m": 11.0,
+        "x_m": 4110827.876,
+        "y_m": 535451.2,
+        "computed_volume_m3": 0.073381,
+        "legacy_volume_m3": 5.352,
+        "computed_basal_area_m2": 0.013478,
+        "hdr": 83.97,
+        "quality_flag": null
+      },
+      {
+        "tree_id": "QSL15070035",
+        "species": "红桦",
+        "dbh_cm": 7.8,
+        "height_m": 8.0,
+        "x_m": 4110830.573,
+        "y_m": 535446.644,
+        "computed_volume_m3": 0.018,
+        "legacy_volume_m3": 1.3104,
+        "computed_basal_area_m2": 0.004778,
+        "hdr": 102.56,
+        "quality_flag": null
+      },
+      {
+        "tree_id": "QSL15070044",
+        "species": "红桦",
+        "dbh_cm": 8.4,
+        "height_m": 8.0,
+        "x_m": 4110832.253,
+        "y_m": 535443.84,
+        "computed_volume_m3": 0.018,
+        "legacy_volume_m3": 1.4018,
+        "computed_basal_area_m2": 0.005542,
+        "hdr": 95.24,
+        "quality_flag": null
+      },
+      {
+        "tree_id": "QSL15070001",
+        "species": "青海云杉",
+        "dbh_cm": 33.2,
+        "height_m": 23.0,
+        "x_m": 4110835.946,
+        "y_m": 535456.119,
+        "computed_volume_m3": 0.764029,
+        "legacy_volume_m3": 29.01,
+        "computed_basal_area_m2": 0.08657,
+        "hdr": 69.28,
+        "quality_flag": null
+      },
+      {
+        "tree_id": "QSL15070021",
+        "species": "青海云杉",
+        "dbh_cm": 9.4,
+        "height_m": 9.0,
+        "x_m": 4110826.052,
+        "y_m": 535440.859,
+        "computed_volume_m3": 0.018,
+        "legacy_volume_m3": 6.6576,
+        "computed_basal_area_m2": 0.00694,
+        "hdr": 95.74,
+        "quality_flag": null
+      },
+      {
+        "tree_id": "QSL15070031",
+        "species": "红桦",
+        "dbh_cm": 12.2,
+        "height_m": 11.0,
+        "x_m": 4110829.984,
+        "y_m": 535449.553,
+        "computed_volume_m3": 0.064369,
+        "legacy_volume_m3": 3.584,
+        "computed_basal_area_m2": 0.01169,
+        "hdr": 90.16,
+        "quality_flag": null
+      },
+      {
+        "tree_id": "QSL15070016",
+        "species": "红桦",
+        "dbh_cm": 7.7,
+        "height_m": 9.0,
+        "x_m": 4110823.398,
+        "y_m": 535442.858,
+        "computed_volume_m3": 0.018,
+        "legacy_volume_m3": 1.0718,
+        "computed_basal_area_m2": 0.004657,
+        "hdr": 116.88,
+        "quality_flag": null
+      },
+      {
+        "tree_id": "QSL15070039",
+        "species": "红桦",
+        "dbh_cm": 7.3,
+        "height_m": 9.0,
+        "x_m": 4110832.131,
+        "y_m": 535445.723,
+        "computed_volume_m3": 0.018,
+        "legacy_volume_m3": 0.9062,
+        "computed_basal_area_m2": 0.004185,
+        "hdr": 123.29,
+        "quality_flag": null
+      },
+      {
+        "tree_id": "QSL15070032",
+        "species": "青海云杉",
+        "dbh_cm": 41.8,
+        "height_m": 26.0,
+        "x_m": 4110834.028,
+        "y_m": 535451.608,
+        "computed_volume_m3": 1.305646,
+        "legacy_volume_m3": 10.0192,
+        "computed_basal_area_m2": 0.137228,
+        "hdr": 62.2,
+        "quality_flag": null
+      },
+      {
+        "tree_id": "QSL15070033",
+        "species": "青海云杉",
+        "dbh_cm": 32.1,
+        "height_m": 24.0,
+        "x_m": 4110829.293,
+        "y_m": 535446.893,
+        "computed_volume_m3": 0.749803,
+        "legacy_volume_m3": 29.1408,
+        "computed_basal_area_m2": 0.080928,
+        "hdr": 74.77,
+        "quality_flag": null
+      },
+      {
+        "tree_id": "QSL15070010",
+        "species": "青海云杉",
+        "dbh_cm": 23.5,
+        "height_m": 21.0,
+        "x_m": 4110821.925,
+        "y_m": 535450.324,
+        "computed_volume_m3": 0.374772,
+        "legacy_volume_m3": 32.361,
+        "computed_basal_area_m2": 0.043374,
+        "hdr": 89.36,
+        "quality_flag": null
+      },
+      {
+        "tree_id": "QSL15070025",
+        "species": "白桦",
+        "dbh_cm": 10.3,
+        "height_m": 11.0,
+        "x_m": 4110826.747,
+        "y_m": 535448.813,
+        "computed_volume_m3": 0.047133,
+        "legacy_volume_m3": 1.9361,
+        "computed_basal_area_m2": 0.008332,
+        "hdr": 106.8,
+        "quality_flag": null
+      },
+      {
+        "tree_id": "QSL15070030",
+        "species": "乌柳",
+        "dbh_cm": 6.5,
+        "height_m": 7.0,
+        "x_m": 4110829.11,
+        "y_m": 535451.714,
+        "computed_volume_m3": 0.01186,
+        "legacy_volume_m3": 0.0505,
+        "computed_basal_area_m2": 0.003318,
+        "hdr": 107.69,
+        "quality_flag": null
+      },
+      {
+        "tree_id": "QSL15070045",
+        "species": "红桦",
+        "dbh_cm": 14.5,
+        "height_m": 13.0,
+        "x_m": 4110833.697,
+        "y_m": 535445.292,
+        "computed_volume_m3": 0.104513,
+        "legacy_volume_m3": 4.1975,
+        "computed_basal_area_m2": 0.016513,
+        "hdr": 89.66,
+        "quality_flag": null
+      },
+      {
+        "tree_id": "QSL15070011",
+        "species": "青海云杉",
+        "dbh_cm": 22.8,
+        "height_m": 21.0,
+        "x_m": 4110821.966,
+        "y_m": 535446.349,
+        "computed_volume_m3": 0.354896,
+        "legacy_volume_m3": 30.4984,
+        "computed_basal_area_m2": 0.040828,
+        "hdr": 92.11,
+        "quality_flag": null
+      },
+      {
+        "tree_id": "QSL15070051",
+        "species": "青海云杉",
+        "dbh_cm": 8.4,
+        "height_m": 8.5,
+        "x_m": 4110835.928,
+        "y_m": 535442.56,
+        "computed_volume_m3": 0.018,
+        "legacy_volume_m3": 3.9614,
+        "computed_basal_area_m2": 0.005542,
+        "hdr": 101.19,
+        "quality_flag": null
+      },
+      {
+        "tree_id": "QSL15070055",
+        "species": "青海云杉",
+        "dbh_cm": 12.7,
+        "height_m": 12.5,
+        "x_m": 4110835.67,
+        "y_m": 535443.813,
+        "computed_volume_m3": 0.07417,
+        "legacy_volume_m3": 8.4853,
+        "computed_basal_area_m2": 0.012668,
+        "hdr": 98.43,
+        "quality_flag": null
+      },
+      {
+        "tree_id": "QSL15070009",
+        "species": "红桦",
+        "dbh_cm": 8.9,
+        "height_m": 10.0,
+        "x_m": 4110825.27,
+        "y_m": 535454.594,
+        "computed_volume_m3": 0.018,
+        "legacy_volume_m3": 2.1112,
+        "computed_basal_area_m2": 0.006221,
+        "hdr": 112.36,
+        "quality_flag": null
+      },
+      {
+        "tree_id": "QSL15070023",
+        "species": "白桦",
+        "dbh_cm": 8.9,
+        "height_m": 10.0,
+        "x_m": 4110825.408,
+        "y_m": 535451.06,
+        "computed_volume_m3": 0.018,
+        "legacy_volume_m3": 2.1112,
+        "computed_basal_area_m2": 0.006221,
+        "hdr": 112.36,
+        "quality_flag": null
+      },
+      {
+        "tree_id": "QSL15070024",
+        "species": "白桦",
+        "dbh_cm": 8.1,
+        "height_m": 10.0,
+        "x_m": 4110825.931,
+        "y_m": 535449.327,
+        "computed_volume_m3": 0.018,
+        "legacy_volume_m3": 0.9048,
+        "computed_basal_area_m2": 0.005153,
+        "hdr": 123.46,
+        "quality_flag": null
+      },
+      {
+        "tree_id": "QSL15070040",
+        "species": "红桦",
+        "dbh_cm": 6.3,
+        "height_m": 8.5,
+        "x_m": 4110828.005,
+        "y_m": 535439.735,
+        "computed_volume_m3": 0.014741,
+        "legacy_volume_m3": 0.426,
+        "computed_basal_area_m2": 0.003117,
+        "hdr": 134.92,
+        "quality_flag": null
+      },
+      {
+        "tree_id": "QSL15070037",
+        "species": "红桦",
+        "dbh_cm": 15.7,
+        "height_m": 14.0,
+        "x_m": 4110831.281,
+        "y_m": 535445.402,
+        "computed_volume_m3": 0.130276,
+        "legacy_volume_m3": 1.9932,
+        "computed_basal_area_m2": 0.019359,
+        "hdr": 89.17,
+        "quality_flag": null
+      },
+      {
+        "tree_id": "QSL15070048",
+        "species": "红桦",
+        "dbh_cm": 9.3,
+        "height_m": 12.0,
+        "x_m": 4110834.145,
+        "y_m": 535440.438,
+        "computed_volume_m3": 0.018,
+        "legacy_volume_m3": 1.0199,
+        "computed_basal_area_m2": 0.006793,
+        "hdr": 129.03,
+        "quality_flag": null
+      },
+      {
+        "tree_id": "QSL15070049",
+        "species": "红桦",
+        "dbh_cm": 6.8,
+        "height_m": 9.0,
+        "x_m": 4110834.989,
+        "y_m": 535439.649,
+        "computed_volume_m3": 0.017962,
+        "legacy_volume_m3": 0.6676,
+        "computed_basal_area_m2": 0.003632,
+        "hdr": 132.35,
+        "quality_flag": null
+      },
+      {
+        "tree_id": "QSL15070006",
+        "species": "乌柳",
+        "dbh_cm": 6.4,
+        "height_m": 10.0,
+        "x_m": 4110826.212,
+        "y_m": 535457.216,
+        "computed_volume_m3": 0.016357,
+        "legacy_volume_m3": 0.0266,
+        "computed_basal_area_m2": 0.003217,
+        "hdr": 156.25,
+        "quality_flag": null
+      },
+      {
+        "tree_id": "QSL15070047",
+        "species": "红桦",
+        "dbh_cm": 11.0,
+        "height_m": 12.0,
+        "x_m": 4110835.055,
+        "y_m": 535444.172,
+        "computed_volume_m3": 0.058024,
+        "legacy_volume_m3": 1.98,
+        "computed_basal_area_m2": 0.009503,
+        "hdr": 109.09,
+        "quality_flag": null
+      },
+      {
+        "tree_id": "QSL15070015",
+        "species": "青海云杉",
+        "dbh_cm": 30.8,
+        "height_m": 26.0,
+        "x_m": 4110821.31,
+        "y_m": 535440.834,
+        "computed_volume_m3": 0.753068,
+        "legacy_volume_m3": 14.8056,
+        "computed_basal_area_m2": 0.074506,
+        "hdr": 84.42,
+        "quality_flag": null
+      },
+      {
+        "tree_id": "QSL15070036",
+        "species": "红桦",
+        "dbh_cm": 12.8,
+        "height_m": 14.0,
+        "x_m": 4110830.354,
+        "y_m": 535446.46,
+        "computed_volume_m3": 0.089451,
+        "legacy_volume_m3": 1.0812,
+        "computed_basal_area_m2": 0.012868,
+        "hdr": 109.38,
+        "quality_flag": null
+      },
+      {
+        "tree_id": "QSL15070020",
+        "species": "青海云杉",
+        "dbh_cm": 22.6,
+        "height_m": 23.0,
+        "x_m": 4110826.841,
+        "y_m": 535442.946,
+        "computed_volume_m3": 0.382052,
+        "legacy_volume_m3": 12.7512,
+        "computed_basal_area_m2": 0.040115,
+        "hdr": 101.77,
+        "quality_flag": null
+      },
+      {
+        "tree_id": "QSL15070034",
+        "species": "青海云杉",
+        "dbh_cm": 1.9,
+        "height_m": 2.2,
+        "x_m": 4110828.558,
+        "y_m": 535445.436,
+        "computed_volume_m3": 0.000437,
+        "legacy_volume_m3": 0.0,
+        "computed_basal_area_m2": 0.000284,
+        "hdr": 115.79,
+        "quality_flag": null
+      },
+      {
+        "tree_id": "QSL15070042",
+        "species": "青海云杉",
+        "dbh_cm": 2.4,
+        "height_m": 2.6,
+        "x_m": 4110831.917,
+        "y_m": 535442.943,
+        "computed_volume_m3": 0.000785,
+        "legacy_volume_m3": 0.0,
+        "computed_basal_area_m2": 0.000452,
+        "hdr": 108.33,
+        "quality_flag": null
+      },
+      {
+        "tree_id": "QSL15070007",
+        "species": "青海云杉",
+        "dbh_cm": 2.5,
+        "height_m": 2.4,
+        "x_m": 4110824.625,
+        "y_m": 535457.694,
+        "computed_volume_m3": 0.00078,
+        "legacy_volume_m3": 0.0,
+        "computed_basal_area_m2": 0.000491,
+        "hdr": 96.0,
+        "quality_flag": null
+      },
+      {
+        "tree_id": "QSL15070013",
+        "species": "乌柳",
+        "dbh_cm": 5.1,
+        "height_m": 4.0,
+        "x_m": 4110821.326,
+        "y_m": 535443.2,
+        "computed_volume_m3": 0.004418,
+        "legacy_volume_m3": 0.0438,
+        "computed_basal_area_m2": 0.002043,
+        "hdr": 78.43,
+        "quality_flag": null
+      },
+      {
+        "tree_id": "QSL15070005",
+        "species": "乌柳",
+        "dbh_cm": 5.0,
+        "height_m": 3.5,
+        "x_m": 4110826.268,
+        "y_m": 535457.355,
+        "computed_volume_m3": 0.00374,
+        "legacy_volume_m3": 0.042,
+        "computed_basal_area_m2": 0.001963,
+        "hdr": 70.0,
+        "quality_flag": null
+      },
+      {
+        "tree_id": "QSL15070028",
+        "species": "青海云杉",
+        "dbh_cm": 1.2,
+        "height_m": 1.5,
+        "x_m": 4110828.265,
+        "y_m": 535450.531,
+        "computed_volume_m3": 0.000131,
+        "legacy_volume_m3": 0.0,
+        "computed_basal_area_m2": 0.000113,
+        "hdr": 125.0,
+        "quality_flag": null
+      }
+    ],
+    "hegyi_overview": {
+      "subplot_id": "1507",
+      "total_trees_analyzed": 55,
+      "mean_hegyi_ci": 11.363,
+      "competition_intensity_level": "极强(自然稀疏压力剧烈)",
+      "top_suppressed_high_risk_trees": [
+        {
+          "tree_id": "QSL15070028",
+          "species": "青海云杉",
+          "dbh_cm": 1.2,
+          "height_m": 1.5,
+          "volume_m3": 0.0,
+          "hegyi_ci": 60.552,
+          "competitor_count": 16,
+          "top_competitors": [
+            {
+              "neighbor_id": "QSL15070029",
+              "neighbor_species": "白桦",
+              "neighbor_dbh": 13.1,
+              "distance_m": 0.77,
+              "pressure_term": 14.107
+            },
+            {
+              "neighbor_id": "QSL15070033",
+              "neighbor_species": "青海云杉",
+              "neighbor_dbh": 32.1,
+              "distance_m": 3.78,
+              "pressure_term": 7.076
+            },
+            {
+              "neighbor_id": "QSL15070027",
+              "neighbor_species": "青海云杉",
+              "neighbor_dbh": 6.1,
+              "distance_m": 0.85,
+              "pressure_term": 5.949
+            }
+          ]
+        },
+        {
+          "tree_id": "QSL15070034",
+          "species": "青海云杉",
+          "dbh_cm": 1.9,
+          "height_m": 2.2,
+          "volume_m3": 0.0,
+          "hegyi_ci": 44.395,
+          "competitor_count": 26,
+          "top_competitors": [
+            {
+              "neighbor_id": "QSL15070033",
+              "neighbor_species": "青海云杉",
+              "neighbor_dbh": 32.1,
+              "distance_m": 1.63,
+              "pressure_term": 10.353
+            },
+            {
+              "neighbor_id": "QSL15070020",
+              "neighbor_species": "青海云杉",
+              "neighbor_dbh": 22.6,
+              "distance_m": 3.02,
+              "pressure_term": 3.933
+            },
+            {
+              "neighbor_id": "QSL15070036",
+              "neighbor_species": "红桦",
+              "neighbor_dbh": 12.8,
+              "distance_m": 2.07,
+              "pressure_term": 3.259
+            }
+          ]
+        },
+        {
+          "tree_id": "QSL15070042",
+          "species": "青海云杉",
+          "dbh_cm": 2.4,
+          "height_m": 2.6,
+          "volume_m3": 0.0,
+          "hegyi_ci": 44.353,
+          "competitor_count": 24,
+          "top_competitors": [
+            {
+              "neighbor_id": "QSL15070043",
+              "neighbor_species": "青海云杉",
+              "neighbor_dbh": 6.6,
+              "distance_m": 0.17,
+              "pressure_term": 16.518
+            },
+            {
+              "neighbor_id": "QSL15070044",
+              "neighbor_species": "红桦",
+              "neighbor_dbh": 8.4,
+              "distance_m": 0.96,
+              "pressure_term": 3.654
+            },
+            {
+              "neighbor_id": "QSL15070033",
+              "neighbor_species": "青海云杉",
+              "neighbor_dbh": 32.1,
+              "distance_m": 4.74,
+              "pressure_term": 2.82
+            }
+          ]
+        },
+        {
+          "tree_id": "QSL15070026",
+          "species": "红桦",
+          "dbh_cm": 3.4,
+          "height_m": 4.8,
+          "volume_m3": 0.0,
+          "hegyi_ci": 44.28,
+          "competitor_count": 21,
+          "top_competitors": [
+            {
+              "neighbor_id": "QSL15070025",
+              "neighbor_species": "白桦",
+              "neighbor_dbh": 10.3,
+              "distance_m": 0.13,
+              "pressure_term": 22.881
+            },
+            {
+              "neighbor_id": "QSL15070033",
+              "neighbor_species": "青海云杉",
+              "neighbor_dbh": 32.1,
+              "distance_m": 3.12,
+              "pressure_term": 3.024
+            },
+            {
+              "neighbor_id": "QSL15070024",
+              "neighbor_species": "白桦",
+              "neighbor_dbh": 8.1,
+              "distance_m": 1.05,
+              "pressure_term": 2.274
+            }
+          ]
+        },
+        {
+          "tree_id": "QSL15070014",
+          "species": "乌柳",
+          "dbh_cm": 1.4,
+          "height_m": 3.5,
+          "volume_m3": 0.0,
+          "hegyi_ci": 42.791,
+          "competitor_count": 10,
+          "top_competitors": [
+            {
+              "neighbor_id": "QSL15070015",
+              "neighbor_species": "青海云杉",
+              "neighbor_dbh": 30.8,
+              "distance_m": 1.79,
+              "pressure_term": 12.277
+            },
+            {
+              "neighbor_id": "QSL15070013",
+              "neighbor_species": "乌柳",
+              "neighbor_dbh": 5.1,
+              "distance_m": 0.6,
+              "pressure_term": 6.049
+            },
+            {
+              "neighbor_id": "QSL15070012",
+              "neighbor_species": "青海云杉",
+              "neighbor_dbh": 29.3,
+              "distance_m": 4.4,
+              "pressure_term": 4.761
+            }
+          ]
+        }
+      ],
+      "top_suppressed_trees_natural_thinning_candidates": [
+        {
+          "tree_id": "QSL15070028",
+          "species": "青海云杉",
+          "dbh_cm": 1.2,
+          "height_m": 1.5,
+          "volume_m3": 0.0,
+          "hegyi_ci": 60.552,
+          "competitor_count": 16,
+          "top_competitors": [
+            {
+              "neighbor_id": "QSL15070029",
+              "neighbor_species": "白桦",
+              "neighbor_dbh": 13.1,
+              "distance_m": 0.77,
+              "pressure_term": 14.107
+            },
+            {
+              "neighbor_id": "QSL15070033",
+              "neighbor_species": "青海云杉",
+              "neighbor_dbh": 32.1,
+              "distance_m": 3.78,
+              "pressure_term": 7.076
+            },
+            {
+              "neighbor_id": "QSL15070027",
+              "neighbor_species": "青海云杉",
+              "neighbor_dbh": 6.1,
+              "distance_m": 0.85,
+              "pressure_term": 5.949
+            }
+          ]
+        },
+        {
+          "tree_id": "QSL15070034",
+          "species": "青海云杉",
+          "dbh_cm": 1.9,
+          "height_m": 2.2,
+          "volume_m3": 0.0,
+          "hegyi_ci": 44.395,
+          "competitor_count": 26,
+          "top_competitors": [
+            {
+              "neighbor_id": "QSL15070033",
+              "neighbor_species": "青海云杉",
+              "neighbor_dbh": 32.1,
+              "distance_m": 1.63,
+              "pressure_term": 10.353
+            },
+            {
+              "neighbor_id": "QSL15070020",
+              "neighbor_species": "青海云杉",
+              "neighbor_dbh": 22.6,
+              "distance_m": 3.02,
+              "pressure_term": 3.933
+            },
+            {
+              "neighbor_id": "QSL15070036",
+              "neighbor_species": "红桦",
+              "neighbor_dbh": 12.8,
+              "distance_m": 2.07,
+              "pressure_term": 3.259
+            }
+          ]
+        },
+        {
+          "tree_id": "QSL15070042",
+          "species": "青海云杉",
+          "dbh_cm": 2.4,
+          "height_m": 2.6,
+          "volume_m3": 0.0,
+          "hegyi_ci": 44.353,
+          "competitor_count": 24,
+          "top_competitors": [
+            {
+              "neighbor_id": "QSL15070043",
+              "neighbor_species": "青海云杉",
+              "neighbor_dbh": 6.6,
+              "distance_m": 0.17,
+              "pressure_term": 16.518
+            },
+            {
+              "neighbor_id": "QSL15070044",
+              "neighbor_species": "红桦",
+              "neighbor_dbh": 8.4,
+              "distance_m": 0.96,
+              "pressure_term": 3.654
+            },
+            {
+              "neighbor_id": "QSL15070033",
+              "neighbor_species": "青海云杉",
+              "neighbor_dbh": 32.1,
+              "distance_m": 4.74,
+              "pressure_term": 2.82
+            }
+          ]
+        },
+        {
+          "tree_id": "QSL15070026",
+          "species": "红桦",
+          "dbh_cm": 3.4,
+          "height_m": 4.8,
+          "volume_m3": 0.0,
+          "hegyi_ci": 44.28,
+          "competitor_count": 21,
+          "top_competitors": [
+            {
+              "neighbor_id": "QSL15070025",
+              "neighbor_species": "白桦",
+              "neighbor_dbh": 10.3,
+              "distance_m": 0.13,
+              "pressure_term": 22.881
+            },
+            {
+              "neighbor_id": "QSL15070033",
+              "neighbor_species": "青海云杉",
+              "neighbor_dbh": 32.1,
+              "distance_m": 3.12,
+              "pressure_term": 3.024
+            },
+            {
+              "neighbor_id": "QSL15070024",
+              "neighbor_species": "白桦",
+              "neighbor_dbh": 8.1,
+              "distance_m": 1.05,
+              "pressure_term": 2.274
+            }
+          ]
+        },
+        {
+          "tree_id": "QSL15070014",
+          "species": "乌柳",
+          "dbh_cm": 1.4,
+          "height_m": 3.5,
+          "volume_m3": 0.0,
+          "hegyi_ci": 42.791,
+          "competitor_count": 10,
+          "top_competitors": [
+            {
+              "neighbor_id": "QSL15070015",
+              "neighbor_species": "青海云杉",
+              "neighbor_dbh": 30.8,
+              "distance_m": 1.79,
+              "pressure_term": 12.277
+            },
+            {
+              "neighbor_id": "QSL15070013",
+              "neighbor_species": "乌柳",
+              "neighbor_dbh": 5.1,
+              "distance_m": 0.6,
+              "pressure_term": 6.049
+            },
+            {
+              "neighbor_id": "QSL15070012",
+              "neighbor_species": "青海云杉",
+              "neighbor_dbh": 29.3,
+              "distance_m": 4.4,
+              "pressure_term": 4.761
+            }
+          ]
+        }
+      ]
+    }
+  }
+}

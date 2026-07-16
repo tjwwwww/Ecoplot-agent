@@ -1,0 +1,766 @@
+schema_version: "0.1"
+ontology_name: 祁连山森林样地结构质量诊断核心本体
+purpose: >-
+  统一24 hm2监测大样地、20 m×20 m小样方、乔木每木调查、枯死木、
+  林下灌木、蓄积量、派生指标、诊断信号与监测建议的语义，支撑工具计算和智能体解释。
+
+scope:
+  included:
+    - 乔木每木调查
+    - 树种蓄积量
+    - 枯死木调查
+    - 林下灌木调查
+    - 样方结构指标计算
+    - 相对质量诊断
+    - 监测优先级与补充调查建议
+  excluded_for_v0_1:
+    - 遥感影像
+    - 气象数据
+    - 土壤数据
+    - 长期趋势预测
+    - 生态系统综合总分
+    - 因果归因与修复方案自动决策
+
+spatial_assumptions:
+  monitoring_plot_area_ha: 24
+  subplot_length_m: 20
+  subplot_width_m: 20
+  subplot_area_m2: 400
+  expected_subplot_count: 600
+
+model_layers:
+  - layer_id: domain
+    label: 现实对象层
+  - layer_id: observation
+    label: 调查观测层
+  - layer_id: indicator
+    label: 指标与公式层
+  - layer_id: diagnosis
+    label: 分析诊断层
+
+classes:
+  # 现实对象层
+  - class_id: ProtectedArea
+    label: 保护地
+    layer: domain
+    attributes:
+      - protected_area_id
+      - name
+
+  - class_id: MonitoringPlot
+    label: 监测大样地
+    layer: domain
+    attributes:
+      - monitoring_plot_id
+      - name
+      - area_ha
+
+  - class_id: ClimateEvent
+    label: 气候灾害事件
+    layer: domain
+    description: >-
+      大尺度环境或气候扰动事件（如 2024 年生长期持续干旱、强雪压灾害等），
+      用于对样方和优势种群的生长动态异常及高细长性信号进行宏观环境因果追溯。
+    attributes:
+      - event_id
+      - event_name
+      - event_type: [drought, snow_heavy, frost, wind_storm]
+      - severity_class
+      - start_date
+      - end_date
+
+  - class_id: Subplot
+    label: 小样方
+    layer: domain
+    attributes:
+      - subplot_id
+      - subplot_number
+      - area_m2
+      - origin_x_m
+      - origin_y_m
+      - max_x_m  # 新增：样方空间边界极值，便于边界极值快速对标
+      - max_y_m  # 新增：样方空间边界极值，避免复杂 GIS 几何运算
+
+  - class_id: TreeIndividual
+    label: 乔木个体
+    layer: domain
+    attributes:
+      - tree_id
+      - tree_local_number
+
+  - class_id: Taxon
+    label: 生物分类单元
+    layer: domain
+    attributes:
+      - taxon_id
+      - accepted_name_cn
+      - scientific_name
+      - rank
+      # === 新增生态习性与演替角色属性（支撑顶极群落及演替推理） ===
+      - successional_status: [Pioneer, Sub_climax, Climax]
+      - shade_tolerance: [Very_Intolerant, Intolerant, Moderate, Tolerant, Very_Tolerant]
+      - water_niche: [Xerophytic, Mesophytic, Hygrophilous]
+      - growth_rate: [Fast, Medium, Slow]
+      - lifespan: [Short, Medium, Long]
+      - is_endemic: [True, False]
+
+  - class_id: DeadwoodElement
+    label: 枯死木构件
+    layer: domain
+    optional: true
+    use_condition: 仅在枯死木表为逐件记录且可唯一编号时使用
+    attributes:
+      - deadwood_id
+      - deadwood_type
+
+  # 调查观测层
+  - class_id: Dataset
+    label: 数据集
+    layer: observation
+    attributes:
+      - dataset_id
+      - dataset_name
+      - source_file
+      - data_granularity
+
+  - class_id: SurveyEvent
+    label: 调查事件
+    layer: observation
+    attributes:
+      - survey_event_id
+      - survey_date
+      - temporal_precision
+      - survey_method
+      - source_dataset_id
+
+  - class_id: TreeObservation
+    label: 乔木观测记录
+    layer: observation
+    description: >-
+      单木逐株调查记录，保留每棵树的几何、健康与位置测量值，便于与单木环境上下文分离分析。
+    attributes:
+      - observation_id
+      - tree_x_m
+      - tree_y_m
+      - tree_height_m
+      - tree_dbh_cm
+      - crown_width_ew_m
+      - crown_width_ns_m
+      - crown_width_mean_m
+      - crown_base_height_m
+      - branch_count
+      - health_status
+      - quality_flag
+
+  - class_id: TreeTopographyContext
+    label: 单木地形因子
+    layer: observation
+    description: >-
+      记录单木所在位置的地形背景信息，用于区分树体测量与地形因素。
+    attributes:
+      - context_id
+      - tree_id
+      - subplot_id
+      - monitoring_plot_id
+      - tree_x_m
+      - tree_y_m
+      - elevation_m
+      - slope_degree
+      - aspect_degree
+      - slope_position
+      - terrain_position
+      - data_source
+      - imported_at
+      - quality_flag
+
+  - class_id: TreeHydrologyContext
+    label: 单木水文因子
+    layer: observation
+    description: >-
+      记录单木所在位置的水文条件，如土壤湿润度和近地表水文状态。
+    attributes:
+      - context_id
+      - tree_id
+      - soil_moisture_class
+      - water_table_depth_m
+      - surface_water_distance_m
+      - wetness_index
+      - quality_flag
+
+  - class_id: TreeSoilContext
+    label: 单木土壤因子
+    layer: observation
+    description: >-
+      记录单木所在地点的土壤性质，为生长适宜性和立地因子分析提供基础。
+    attributes:
+      - context_id
+      - tree_id
+      - soil_texture_class
+      - soil_depth_cm
+      - soil_ph
+      - soil_moisture_class
+      - quality_flag
+
+  - class_id: TreeMicroclimateContext
+    label: 单木微气候因子
+    layer: observation
+    description: >-
+      记录单木所在位置的微气候信息，如冠层遮荫和小尺度气候分区。
+    attributes:
+      - context_id
+      - tree_id
+      - microclimate_zone
+      - canopy_exposure
+      - local_temperature_influence
+      - quality_flag
+
+  - class_id: ClimateStation
+    label: 气象站点
+    layer: observation
+    attributes:
+      - station_id
+      - station_name
+      - latitude
+      - longitude
+      - elevation_m
+      - source_label
+
+  - class_id: ClimateObservation
+    label: 气候观测记录
+    layer: observation
+    description: >-
+      逐日气候时间序列观测记录，支持与样方或单木诊断关联的长期气候分析。
+    attributes:
+      - observation_id
+      - station_id
+      - observation_date
+      - mean_temperature_c
+      - min_temperature_c
+      - max_temperature_c
+      - precipitation_mm
+      - dew_point_c
+      - wind_speed_m_s
+      - wind_gust_m_s
+      - visibility_km
+      - pressure_hpa
+      - snow_depth_cm
+      - weather_type
+      - raw_weather_flags
+      - data_source
+      - imported_at
+      - quality_flag
+
+  - class_id: DeadwoodObservation
+    label: 枯死木观测记录
+    layer: observation
+    description: >-
+      这是调查记录而不是生物对象。若原表按样方汇总，则直接描述样方；
+      若原表逐件记录，则同时关联DeadwoodElement。
+    attributes:
+      - observation_id
+      - deadwood_type
+      - species_raw
+      - count
+      - health_or_decay_class
+      - quality_flag
+
+  - class_id: ShrubLayerObservation
+    label: 灌木层观测记录
+    layer: observation
+    description: >-
+      用于记录小样方内某灌木物种或整个灌木层的调查结果，不把“观测”误作生物实体。
+    attributes:
+      - observation_id
+      - species_raw
+      - individual_count
+      - mean_height_m
+      - cover_pct
+      - abundance_class
+      - quality_flag
+
+  - class_id: VolumeObservation
+    label: 蓄积量记录
+    layer: observation
+    attributes:
+      - observation_id
+      - value_m3
+      - value_basis
+      - value_origin
+      - quality_flag
+
+  - class_id: VolumeTableParameter
+    label: 二元材积参数格点
+    layer: indicator
+    description: >-
+      国家与地方《树种二元立木材积测算表》中的具体格点/参数节点。
+      不同时间和不同调查中处于该径阶和树高阶的众多单木观测记录共享同一个二元材积表参数格点节点。
+    attributes:
+      - parameter_id
+      - table_name
+      - species_group
+      - dbh_class_cm
+      - height_class_m
+      - volume_value_m3
+
+  # 指标与公式层
+  - class_id: IndicatorDefinition
+    label: 指标定义
+    layer: indicator
+    attributes:
+      - indicator_id
+      - name_cn
+      - level
+      - definition
+      - canonical_unit
+      - value_type
+      - source_class     # 桥接元数据：真实世界对应的类名 (如 TreeObservation, Subplot)
+      - property_key     # 桥接元数据：真实世界对应的物理字段名 (如 tree_dbh_cm, area_m2)
+
+  - class_id: IndicatorValue
+    label: 指标值
+    layer: indicator
+    attributes:
+      - indicator_value_id
+      - value
+      - unit
+      - level: [subplot, monitoring_plot, tree_individual, region]
+      - per_hectare_value
+      - value_origin: [field_measured, field_survey_sheet_summary, derived_from_formula, aggregated_from_observations, aggregated_from_single_tree_two_way_formulas, literature_reference, expert_judgment]
+      - quality_flag
+
+  - class_id: AggregatedIndicatorValue
+    parent: IndicatorValue
+    label: 样方宏观汇总指标快照
+    layer: indicator
+    description: >-
+      针对 600 个小样方及监测大样地聚合生成的宏观尺度核心快照类（如 2023 年样方乔木总蓄积量、
+      每公顷折合蓄积量、香农多样性指数等）。避免将 35,603 株单木全量与该节点连边，仅通过 SQLite/数据库追溯。
+
+  # ============================================================================
+  # 第 1 层：科研知识定义层 (Scientific Knowledge Definition Layer)
+  # ============================================================================
+  - class_id: ScientificKnowledgeDefinition
+    label: 科研知识定义基类
+    layer: scientific_knowledge
+    description: 所有科学计算公式、查表经验模型、判断逻辑准则的终极上位类。
+    attributes:
+      - knowledge_id
+      - name_cn
+      - version
+      - source_type
+      - source_reference
+      - applicability
+
+  - class_id: FormulaDefinition
+    parent: ScientificKnowledgeDefinition
+    label: 公式定义类
+    layer: scientific_knowledge
+    attributes:
+      - formula_id
+      - expression
+
+  - class_id: MathematicalDefinition
+    parent: FormulaDefinition
+    label: 数学定义型公式
+    description: 不依赖特定地区与生物口径的通用数理统计公式（如平均值、平方平均数 D_q、变异系数 CV、Shannon H'、Pielou J）。
+
+  - class_id: ForestryBiometricsFormula
+    parent: FormulaDefinition
+    label: 森林测树学公式
+    description: 林业测树学与测树工专属计算方程（如林分密度、单木断面积、高径比 HDR、活冠率 LCR、林分断面积）。
+
+  - class_id: VolumeModel
+    parent: ScientificKnowledgeDefinition
+    label: 立木蓄积回归模型
+    layer: scientific_knowledge
+    description: >-
+      官方《主要乔木树种二元立木材积模型》中定义的连续回归幂函数模型体系 (V = a * D^b * H^c)。
+      不硬性设置局部 DBH/H 极值范围，通过回归系数集自适应精算单木实测值。
+    attributes:
+      - model_id
+      - expression
+      - coefficient_a
+      - coefficient_b
+      - coefficient_c
+      - applicable_taxa
+      - authority_source
+
+  - class_id: ModelDefinition
+    parent: ScientificKnowledgeDefinition
+    label: 模型定义类
+    layer: scientific_knowledge
+
+  - class_id: EmpiricalLookupModel
+    parent: ModelDefinition
+    label: 经验与查表模型
+    description: 特定地区与树种建立的经验方程或二元立木材积表矩阵（涵盖青海云杉及伴生树种二元表，需记录插值方式和适用径阶区间）。
+    attributes:
+      - applicable_taxa
+      - dbh_range_cm
+      - height_range_m
+      - lookup_or_interpolation_method
+      - allow_extrapolation
+
+  
+
+  # ============================================================================
+  # 第 2 层：变量和指标定义层 (Variable & Indicator Definition Layer)
+  # ============================================================================
+  - class_id: VariableDefinition
+    label: 基础变量定义
+    layer: indicator
+    attributes:
+      - variable_id
+      - name_cn
+      - variable_type: [raw_measured_variable, intermediate_shared_variable]
+      - source_class
+      - property_key
+
+  # ============================================================================
+  # 第 3 层：科研工具实现层 (Scientific Tool Implementation Layer)
+  # ============================================================================
+  - class_id: ScientificToolDefinition
+    label: 科研功能算子工具
+    layer: tool
+    description: 大模型智能体调用的高精高速 Python 执行引擎库工具，实现或绑定一组特定分类的公式/模型/规则簇。
+    attributes:
+      - tool_name
+      - function_signature
+      - category: [stand_structure, tree_morphology, species_diversity, volume_models, deadwood_shrub, spatial_structure]
+
+  - class_id: VisualizationTool
+    label: 科研制图可视化算子
+    layer: tool
+    description: >-
+      大模型智能体选择性调用的科学可视化与交互制图工具（如格网热力图、径阶分布图、单木空间导引图等），
+      原则上不擅自计算复杂指标，仅负责筛选、分箱、汇总与交互渲染表达。
+    attributes:
+      - tool_id
+      - tool_name_cn
+      - chart_type: [grid_heatmap, categorical_bar, numeric_histogram, grouped_bar, scatter_relationship, boxplot, spatial_x_y_map, percentile_profile, time_series]
+      - supported_target_types: [MonitoringPlot, Subplot, TreeIndividual, Taxon]
+
+  # ============================================================================
+  # 第 5 层：运行与结果实例层 (Calculation Run & Indicator Value Layer)
+  # ============================================================================
+  - class_id: CalculationRun
+    label: 算子运行实例
+    layer: runtime
+    description: 记录特定时刻大模型或算子库对某样方发起的一次具体数学计算或模拟推演记录。
+    attributes:
+      - run_id
+      - timestamp
+      - tool_used
+      - target_subplot_id
+
+  # 分析诊断层
+  - class_id: ReferenceGroup
+    label: 参考组
+    layer: diagnosis
+    description: >-
+      为某次诊断动态生成的可比样方集合，不是现实森林实体，也不是固定健康标准。
+    attributes:
+      - reference_group_id
+      - group_type
+      - selection_criteria
+      - applicable_survey_event_id  # 新增：时空锚定，属于哪次调查事件
+      - spatial_scope               # 新增：空间限定，如 same_plot 或 same_region
+      - member_count
+      - generated_at
+
+  - class_id: DiagnosticSignal
+    label: 诊断信号
+    layer: diagnosis
+    attributes:
+      - signal_id
+      - signal_type
+      - severity
+      - confidence
+      - explanation
+      - threshold_rule              # 新增：阈值规则绑定，记录触发该诊断的具体数值规则
+      - uncertainty_note
+
+  - class_id: QualityDimension
+    label: 质量维度
+    layer: diagnosis
+    controlled_values:
+      - stand_structure
+      - species_composition
+      - individual_vitality
+      - habitat_complexity
+      - spatial_structure
+      - data_quality
+
+  - class_id: MonitoringAdvice
+    label: 监测建议
+    layer: diagnosis
+    attributes:
+      - advice_id
+      - advice_type
+      - priority
+      - recommended_action
+      - rationale
+
+  - class_id: FieldInspectionTask
+    label: 现场核查任务清单
+    layer: diagnosis
+    description: >-
+      严格依据保护区“零人工砍伐干预、限物理自疏与无损勘查”红线开具的野外现场核查清单清单实体。
+      仅针对触发 Priority=1 高风险信号的特定标杆单木或样方挂载，绝不全量冗余。
+    attributes:
+      - task_id
+      - target_id
+      - target_type: [TreeIndividual, Subplot]
+      - inspection_action
+      - priority_level
+      - planned_season
+
+relations:
+  - relation_id: containsMonitoringPlot
+    domain: ProtectedArea
+    range: MonitoringPlot
+    label: 包含监测大样地
+
+  - relation_id: containsSubplot
+    domain: MonitoringPlot
+    range: Subplot
+    label: 包含小样方
+
+  - relation_id: containsTree
+    domain: Subplot
+    range: TreeIndividual
+    label: 包含乔木个体
+
+  - relation_id: hasTaxon
+    domain:
+      - TreeIndividual
+      - TreeObservation
+      - ShrubLayerObservation
+      - DeadwoodObservation
+    range: Taxon
+    label: 对应分类单元
+
+  - relation_id: observedEntity
+    domain: TreeObservation
+    range: TreeIndividual
+    label: 观测对象
+
+  - relation_id: occurredDuring
+    domain:
+      - TreeObservation
+      - DeadwoodObservation
+      - ShrubLayerObservation
+      - VolumeObservation
+    range: SurveyEvent
+    label: 发生于调查事件
+
+  - relation_id: locatedInSubplot
+    domain:
+      - TreeObservation
+      - DeadwoodObservation
+      - ShrubLayerObservation
+      - VolumeObservation
+    range: Subplot
+    label: 位于小样方
+
+  - relation_id: describesDeadwoodElement
+    domain: DeadwoodObservation
+    range: DeadwoodElement
+    label: 描述枯死木构件
+    optional: true
+
+  - relation_id: hasIndicatorValue
+    domain:
+      - TreeIndividual
+      - Subplot
+      - MonitoringPlot
+      - ReferenceGroup
+    range: IndicatorValue
+    label: 具有指标值
+
+  - relation_id: instantiatesIndicator
+    domain: IndicatorValue
+    range: IndicatorDefinition
+    label: 实例化指标定义
+
+  - relation_id: calculatedBy
+    domain: IndicatorValue
+    range: Formula
+    label: 由公式计算
+
+  - relation_id: requiresInputIndicator
+    domain: Formula
+    range: IndicatorDefinition
+    label: 需要输入指标
+
+  - relation_id: producesIndicator
+    domain: Formula
+    range: IndicatorDefinition
+    label: 产生输出指标
+
+  - relation_id: visualizesIndicator
+    domain: VisualizationTool
+    range: IndicatorDefinition
+    label: 可视化渲染表达指标
+
+  - relation_id: supportsTarget
+    domain: VisualizationTool
+    range:
+      - MonitoringPlot
+      - Subplot
+      - TreeIndividual
+    label: 支持图表渲染目标对象
+
+  - relation_id: targetSubplot
+    domain: ReferenceGroup
+    range: Subplot
+    label: 面向目标小样方
+
+  - relation_id: hasReferenceMember
+    domain: ReferenceGroup
+    range: Subplot
+    label: 包含参考成员
+
+  - relation_id: comparedAgainst
+    domain: DiagnosticSignal
+    range: ReferenceGroup
+    label: 相对于参考组产生
+
+  - relation_id: basedOnIndicatorValue
+    domain: DiagnosticSignal
+    range: IndicatorValue
+    label: 基于指标值
+
+  - relation_id: usedModel
+    domain: CalculationRun
+    range: VolumeModel
+    label: 计算使用回归模型
+    description: 替代原有高密度的单木强连表边，明确由运行算子绑定所使用的官方幂函数模型参数集。
+
+  - relation_id: implementedByTool
+    domain:
+      - FormulaDefinition
+      - VolumeModel
+    range: ScientificToolDefinition
+    label: 由科研工具算子实现
+
+  - relation_id: triggersInspectionTask
+    domain: DiagnosticSignal
+    range: FieldInspectionTask
+    label: 触发现场核查任务
+    description: 仅当诊断信号判定 priority_level = 1 时，生成并绑定具体野外落地核查任务。
+
+  - relation_id: impactsSubplot
+    domain: ClimateEvent
+    range: Subplot
+    label: 气候事件影响样方
+
+  - relation_id: relatesToQualityDimension
+    domain: DiagnosticSignal
+    range: QualityDimension
+    label: 关联质量维度
+
+  - relation_id: triggersAdvice
+    domain: DiagnosticSignal
+    range: MonitoringAdvice
+    label: 触发监测建议
+
+reference_group_types:
+  - group_type: same_monitoring_plot
+    label: 同一大样地参考组
+    recommended_for_v0_1: true
+  - group_type: same_dominant_species
+    label: 同优势树种参考组
+    recommended_for_v0_1: true
+  - group_type: spatial_neighbors
+    label: 空间邻域参考组
+    recommended_for_v0_1: false
+  - group_type: same_structure_cluster
+    label: 同结构类型参考组
+    recommended_for_v0_1: false
+
+canonical_tree_observation_fields:
+  - source_examples: [样地号]
+    target: monitoring_plot_id
+  - source_examples: [样方号]
+    target: subplot_number
+  - source_examples: [树木编号]
+    target: tree_local_number
+  - source_examples: [X]
+    target: tree_x_m
+  - source_examples: [Y]
+    target: tree_y_m
+  - source_examples: [树名, 树种]
+    target: species_raw
+  - source_examples: [树高/m]
+    target: tree_height_m
+  - source_examples: [胸径/cm]
+    target: tree_dbh_cm
+  - source_examples: [冠幅东西]
+    target: crown_width_ew_m
+  - source_examples: [冠幅南北]
+    target: crown_width_ns_m
+  - source_examples: [冠幅平均]
+    target: crown_width_mean_m
+  - source_examples: [枝下高/m]
+    target: crown_base_height_m
+  - source_examples: [分枝数]
+    target: branch_count
+  - source_examples: [健康状况]
+    target: health_status
+
+mvp_notes:
+  - 平均冠幅原始值与按东西、南北冠幅重新计算的值应并存，不互相覆盖。
+  - 调查日期未知时保留SurveyEvent，survey_date设为null，temporal_precision设为unknown。
+  - 参考组属于分析诊断层，由工具动态生成，不属于自然实体。
+  - 枯死木观测和灌木层观测属于调查观测层，不应放在“生物对象层”。
+  - 若枯死木表不是逐件记录，则暂不实例化DeadwoodElement。
+  - 若灌木表不是逐株记录，则暂不建立ShrubIndividual实体。
+canonical_environment_field_mappings:
+  topography_observations:
+    entity_class: TreeTopographyContext
+    grain: tree
+    field_mappings:
+      tree_id: tree_id
+      subplot_id: subplot_id
+      plot_id: monitoring_plot_id
+      x_m: tree_x_m
+      y_m: tree_y_m
+      elevation_m: elevation_m
+      slope_degree: slope_degree
+      aspect_degree: aspect_degree
+      slope_position: slope_position
+      source_file: data_source
+      imported_at: imported_at
+    unmapped_source_fields:
+      - health_status
+    optional_target_fields:
+      - terrain_position
+      - quality_flag
+  climate_daily_observations:
+    entity_class: ClimateObservation
+    grain: station_day
+    related_station_class: ClimateStation
+    field_mappings:
+      station_id: station_id
+      station_name: station_name
+      latitude: latitude
+      longitude: longitude
+      elevation_m: elevation_m
+      observation_date: observation_date
+      temp: mean_temperature_c
+      max_temp: max_temperature_c
+      min_temp: min_temperature_c
+      prcp: precipitation_mm
+      dewp: dew_point_c
+      wdsp: wind_speed_m_s
+      gust: wind_gust_m_s
+      visib: visibility_km
+      slp: pressure_hpa
+      sndp: snow_depth_cm
+      frshtt: raw_weather_flags
+      source_file: data_source
+      imported_at: imported_at
+    optional_target_fields:
+      - weather_type
+      - quality_flag

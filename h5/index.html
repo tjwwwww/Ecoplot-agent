@@ -1,0 +1,205 @@
+<!doctype html>
+<html lang="zh-CN">
+  <head>
+    <meta charset="UTF-8" />
+    <meta name="viewport" content="width=device-width, initial-scale=1.0, viewport-fit=cover" />
+    <title>祁连山样地调查智能体</title>
+    <link rel="stylesheet" href="./styles.css" />
+  </head>
+  <body>
+    <main class="phone-shell">
+      <header class="app-header">
+        <div class="brand">
+          <div class="brand-mark" aria-hidden="true">
+            <span></span><span></span><span></span>
+          </div>
+          <h1>生态样地调查助手</h1>
+        </div>
+        <nav class="header-actions" aria-label="快捷入口">
+          <button class="icon-action" type="button" id="historyButton" aria-label="历史">
+            <i data-lucide="clock-3"></i>
+            <span>历史</span>
+          </button>
+          <button class="icon-action" type="button" id="moreButton" aria-label="更多">
+            <i data-lucide="ellipsis"></i>
+            <span>更多</span>
+          </button>
+        </nav>
+      </header>
+
+      <section class="more-menu hidden" id="moreMenu" aria-label="更多操作">
+        <button type="button" id="newChatButton">
+          <i data-lucide="message-square-plus"></i>
+          新对话
+        </button>
+        <button type="button" id="openHistoryButton">
+          <i data-lucide="history"></i>
+          历史记录
+        </button>
+      </section>
+
+      <section class="history-panel hidden" id="historyPanel" aria-label="历史记录">
+        <div class="history-head">
+          <h2>历史记录</h2>
+          <button class="ghost-icon" type="button" id="closeHistoryButton" aria-label="关闭历史记录">
+            <i data-lucide="x"></i>
+          </button>
+        </div>
+        <div class="history-list" id="historyList"></div>
+      </section>
+
+      <section class="segmented-control" aria-label="视图切换">
+        <button class="segment active" type="button" data-view="chat">对话</button>
+        <button class="segment" type="button" data-view="map">样方图</button>
+      </section>
+
+      <section class="content-view active" id="chatView" aria-label="对话">
+        <div class="message-row user-message" id="latestUserMessage">
+          <div class="bubble user-bubble empty-chat">请输入问题开始对话</div>
+          <time></time>
+        </div>
+
+        <div class="message-row assistant-message">
+          <div class="assistant-avatar" aria-hidden="true">
+            <i data-lucide="bot"></i>
+          </div>
+          <div>
+            <div class="bubble assistant-bubble" id="assistantText">
+              我可以回答样方巡检、异常原因、树种结构和复核建议。
+            </div>
+            <div class="thinking-panel hidden" id="thinkingPanel">
+              <button class="thinking-title" type="button" id="thinkingToggle">思考过程</button>
+              <div class="thinking-list" id="thinkingList"></div>
+            </div>
+            <time>10:21</time>
+          </div>
+        </div>
+      </section>
+
+      <section class="content-view" id="mapView" aria-label="样方图">
+        <section class="filter-panel">
+          <form class="sample-search" id="sampleSearch">
+            <input id="sampleIdInput" autocomplete="off" placeholder="输入样方ID，例如 0101" />
+            <button type="submit">
+              <i data-lucide="search"></i>
+              查看
+            </button>
+          </form>
+          <p class="sample-status" id="sampleStatus"></p>
+          <div class="species-filter" id="speciesFilter" aria-label="树种筛选"></div>
+        </section>
+
+        <section class="plot-card" id="plotPanel" aria-label="样方空间分布">
+          <div class="card-head">
+            <h2 id="plotTitle">样方 0101 空间分布</h2>
+            <button class="ghost-icon" type="button" aria-label="图表菜单">
+              <i data-lucide="more-vertical"></i>
+            </button>
+          </div>
+
+          <div class="metric-grid" id="metricGrid"></div>
+
+          <div class="plot-wrap">
+            <canvas id="plotCanvas" width="620" height="500" aria-label="样方内单木分布图"></canvas>
+          </div>
+
+          <div class="selected-tree-summary" id="selectedTreeSummary"></div>
+
+          <div class="species-legend" id="speciesLegend" aria-label="树种颜色图例"></div>
+
+          <div class="card-actions">
+            <button type="button" id="zoomButton">
+              <i data-lucide="zoom-in"></i>
+              放大画布
+            </button>
+            <button type="button" id="listButton">
+              <i data-lucide="list"></i>
+              查看样木清单
+            </button>
+          </div>
+        </section>
+
+        <section class="insight-card" id="insightPanel" aria-label="智能诊断摘要">
+          <div class="insight-head">
+            <h2><i data-lucide="clipboard-list"></i>智能诊断摘要</h2>
+            <button class="ghost-icon" type="button" aria-label="收起摘要">
+              <i data-lucide="chevron-up"></i>
+            </button>
+          </div>
+          <ul id="insightList"></ul>
+        </section>
+
+        <section class="tree-list-card hidden" id="treeListPanel">
+          <div class="card-head">
+            <h2 id="treeListTitle">样木清单</h2>
+            <span id="treeCount"></span>
+          </div>
+          <button class="back-plot-button" type="button" id="backPlotButton">
+            <i data-lucide="arrow-left"></i>
+            返回样方图
+          </button>
+          <div class="tree-list" id="treeList"></div>
+        </section>
+
+        <section class="tree-detail-card hidden" id="treeDetailPanel">
+          <div class="card-head">
+            <h2 id="treeDetailTitle">样木详情</h2>
+            <span id="treeDetailStatus"></span>
+          </div>
+          <div class="tree-detail-grid" id="treeDetailGrid"></div>
+          <div class="card-actions">
+            <button type="button" id="backListButton">
+              <i data-lucide="list"></i>
+              返回清单
+            </button>
+            <button type="button" id="locateTreeButton">
+              <i data-lucide="map-pin"></i>
+              图中定位
+            </button>
+          </div>
+        </section>
+      </section>
+
+      <form class="composer" id="composer" action="javascript:void(0)">
+        <label class="input-wrap">
+          <input id="queryInput" name="query" autocomplete="off" placeholder="输入问题或样方ID，例如 0101" />
+          <button class="voice-button" type="button" id="voiceButton" aria-label="语音输入" title="语音输入">
+            <i data-lucide="mic"></i>
+          </button>
+        </label>
+        <button class="send-button" type="submit" aria-label="发送">
+          <i data-lucide="send"></i>
+        </button>
+      </form>
+
+      <nav class="bottom-tabs" aria-label="底部导航">
+        <button class="bottom-tab active" type="button" data-view="chat">
+          <i data-lucide="messages-square"></i>
+          <span>对话</span>
+        </button>
+        <button class="bottom-tab" type="button" data-view="map">
+          <i data-lucide="trees"></i>
+          <span>样方</span>
+        </button>
+        <button class="bottom-tab" type="button">
+          <i data-lucide="user-round"></i>
+          <span>我的</span>
+        </button>
+      </nav>
+    </main>
+
+    <dialog class="plot-dialog" id="plotDialog" aria-label="放大样方图">
+      <div class="dialog-head">
+        <h2 id="dialogTitle">样方分布图</h2>
+        <button class="ghost-icon" type="button" id="closeDialog" aria-label="关闭">
+          <i data-lucide="x"></i>
+        </button>
+      </div>
+      <canvas id="largePlotCanvas" width="760" height="620"></canvas>
+      <div class="species-legend" id="dialogLegend"></div>
+    </dialog>
+
+    <script src="https://unpkg.com/lucide@latest/dist/umd/lucide.min.js"></script>
+    <script src="./app.js?v=20260716_8"></script>
+  </body>
+</html>

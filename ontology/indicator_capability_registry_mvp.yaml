@@ -1,0 +1,524 @@
+# NOTE: 本文件为早期整理草案，已被 ontology/derived_indicator_registry.yaml 替代为正式“公式型派生指标注册表”。
+# 后续请优先维护 derived_indicator_registry.yaml；本文件仅保留作设计记录。
+
+﻿version: 0.1
+name: ForestryAgent MVP 可计算指标能力注册表
+scope: 第一版先覆盖单木形态指标与单木竞争指标
+status: draft
+updated_at: 2026-07-16
+
+principles:
+  - 本文件描述“基于当前数据库字段可以计算什么”，供智能体做工具选择和结果边界控制。
+  - 本文件不是物理数据库结构，也不是知识图谱实例；它是指标能力目录，需与本体变量、数据库字段、公式工具保持映射。
+  - ready 表示字段已具备且可确定性计算；partial 表示可计算但依赖字段质量或解释需保守；requires_model 表示需要模型或外部参数；blocked 表示当前缺关键数据。
+  - 所有形态和竞争指标只能作为观测、计算或相对关注信号，不能单独推出死亡、风折、病虫害或因果机制。
+
+data_sources:
+  tree_observations:
+    entity_level: tree
+    primary_key: tree_id
+    common_filters: [subplot_id, species, tree_id]
+    available_fields:
+      - tree_id
+      - subplot_id
+      - species
+      - tree_dbh_cm
+      - tree_height_m
+      - tree_x_m
+      - tree_y_m
+      - crown_width_mean_m
+      - crown_width_ew_m
+      - crown_width_ns_m
+      - crown_base_height_m
+      - health_status
+      - volume_m3
+  topography_observations:
+    entity_level: tree
+    primary_key: tree_id
+    common_filters: [tree_id, subplot_id]
+    available_fields:
+      - tree_id
+      - elevation_m
+      - slope_degree
+      - aspect_degree
+
+indicator_groups:
+  tree_morphology:
+    name_cn: 单木形态指标
+    level: tree
+    purpose: 描述单株树木大小、细长程度、冠层形态和相对大小位置。
+    indicators:
+      - indicator_id: TREE_HEIGHT_DIAMETER_RATIO
+        name_cn: 高径比
+        status: ready
+        output_unit: ratio
+        input_fields:
+          tree_observations: [tree_height_m, tree_dbh_cm]
+        formula: tree_height_m * 100 / tree_dbh_cm
+        output_field: height_diameter_ratio
+        calculation_type: deterministic
+        applicability:
+          required_conditions:
+            - tree_height_m is not null
+            - tree_dbh_cm > 0
+        interpretation:
+          evidence_level: formal_calculation
+          allowed: 描述树体细长程度，可作为形态关注信号。
+          not_allowed: 不能单独判断风折、死亡、病虫害或稳定性风险。
+        quality_flags:
+          - MISSING_TREE_HEIGHT
+          - MISSING_TREE_DBH
+          - INVALID_TREE_DBH
+
+      - indicator_id: TREE_BASAL_AREA
+        name_cn: 单木胸高断面积
+        status: ready
+        output_unit: m2
+        input_fields:
+          tree_observations: [tree_dbh_cm]
+        formula: pi * (tree_dbh_cm / 200) ^ 2
+        output_field: basal_area_m2
+        calculation_type: deterministic
+        applicability:
+          required_conditions:
+            - tree_dbh_cm > 0
+        interpretation:
+          evidence_level: formal_calculation
+          allowed: 描述单木横截面积大小，可用于林分断面积汇总和竞争指标。
+          not_allowed: 不能直接代表材积或生物量。
+        quality_flags:
+          - MISSING_TREE_DBH
+          - INVALID_TREE_DBH
+
+      - indicator_id: TREE_MEAN_CROWN_WIDTH
+        name_cn: 平均冠幅
+        status: ready
+        output_unit: m
+        input_fields:
+          tree_observations: [crown_width_ew_m, crown_width_ns_m]
+        formula: (crown_width_ew_m + crown_width_ns_m) / 2
+        fallback_fields:
+          tree_observations: [crown_width_mean_m]
+        output_field: crown_width_mean_m
+        calculation_type: deterministic
+        applicability:
+          required_conditions:
+            - crown_width_ew_m is not null or crown_width_mean_m is not null
+            - crown_width_ns_m is not null or crown_width_mean_m is not null
+        interpretation:
+          evidence_level: formal_calculation
+          allowed: 描述树冠水平扩展大小。
+          not_allowed: 不能单独判断受压或生长衰退。
+        quality_flags:
+          - MISSING_CROWN_WIDTH
+
+      - indicator_id: TREE_CROWN_AREA
+        name_cn: 冠幅投影面积
+        status: ready
+        output_unit: m2
+        input_fields:
+          tree_observations: [crown_width_ew_m, crown_width_ns_m]
+        formula: pi * (crown_width_ew_m / 2) * (crown_width_ns_m / 2)
+        fallback_formula: pi * (crown_width_mean_m / 2) ^ 2
+        output_field: crown_area_m2
+        calculation_type: deterministic_with_shape_assumption
+        applicability:
+          required_conditions:
+            - crown_width_ew_m and crown_width_ns_m are available, or crown_width_mean_m is available
+        interpretation:
+          evidence_level: calculated_with_assumption
+          allowed: 近似描述树冠投影大小。
+          not_allowed: 不等同于真实冠层面积或光合面积。
+        quality_flags:
+          - CROWN_AREA_ASSUMES_ELLIPSE_OR_CIRCLE
+          - MISSING_CROWN_WIDTH
+
+      - indicator_id: TREE_CROWN_ASPECT_RATIO
+        name_cn: 冠幅长宽比
+        status: ready
+        output_unit: ratio
+        input_fields:
+          tree_observations: [crown_width_ew_m, crown_width_ns_m]
+        formula: max(crown_width_ew_m, crown_width_ns_m) / min(crown_width_ew_m, crown_width_ns_m)
+        output_field: crown_aspect_ratio
+        calculation_type: deterministic
+        applicability:
+          required_conditions:
+            - crown_width_ew_m > 0
+            - crown_width_ns_m > 0
+        interpretation:
+          evidence_level: formal_calculation
+          allowed: 描述冠形水平伸展是否偏长。
+          not_allowed: 不能单独判断偏冠原因。
+        quality_flags:
+          - MISSING_CROWN_WIDTH
+          - INVALID_CROWN_WIDTH
+
+      - indicator_id: TREE_CROWN_ASYMMETRY
+        name_cn: 冠幅不对称程度
+        status: ready
+        output_unit: ratio
+        input_fields:
+          tree_observations: [crown_width_ew_m, crown_width_ns_m]
+        formula: abs(crown_width_ew_m - crown_width_ns_m) / ((crown_width_ew_m + crown_width_ns_m) / 2)
+        output_field: crown_asymmetry_ratio
+        calculation_type: deterministic
+        applicability:
+          required_conditions:
+            - crown_width_ew_m > 0
+            - crown_width_ns_m > 0
+        interpretation:
+          evidence_level: formal_calculation
+          allowed: 描述东西向与南北向冠幅差异。
+          not_allowed: 不能单独判断受压方向或竞争来源。
+        quality_flags:
+          - MISSING_CROWN_WIDTH
+          - INVALID_CROWN_WIDTH
+
+      - indicator_id: TREE_CROWN_LENGTH
+        name_cn: 冠长
+        status: partial
+        output_unit: m
+        input_fields:
+          tree_observations: [tree_height_m, crown_base_height_m]
+        formula: tree_height_m - crown_base_height_m
+        output_field: crown_length_m
+        calculation_type: deterministic_if_crown_base_definition_valid
+        applicability:
+          required_conditions:
+            - tree_height_m is not null
+            - crown_base_height_m is not null
+            - tree_height_m >= crown_base_height_m
+        interpretation:
+          evidence_level: formal_calculation_with_field_definition_check
+          allowed: 在枝下高/冠底高定义一致时描述树冠垂直长度。
+          not_allowed: 字段含义不明或异常时不能解释为真实活冠长度。
+        quality_flags:
+          - MISSING_CROWN_BASE_HEIGHT
+          - CROWN_BASE_HEIGHT_DEFINITION_REQUIRES_CONFIRMATION
+          - INVALID_CROWN_LENGTH
+
+      - indicator_id: TREE_LIVE_CROWN_RATIO
+        name_cn: 活冠率/冠长率
+        status: partial
+        output_unit: ratio
+        input_fields:
+          tree_observations: [tree_height_m, crown_base_height_m]
+        formula: (tree_height_m - crown_base_height_m) / tree_height_m
+        output_field: live_crown_ratio
+        calculation_type: deterministic_if_crown_base_definition_valid
+        applicability:
+          required_conditions:
+            - tree_height_m > 0
+            - crown_base_height_m is not null
+            - tree_height_m >= crown_base_height_m
+        interpretation:
+          evidence_level: calculated_with_field_definition_check
+          allowed: 描述树冠相对树高的垂直比例。
+          not_allowed: 不能单独判断树木衰退或受压。
+        quality_flags:
+          - MISSING_TREE_HEIGHT
+          - MISSING_CROWN_BASE_HEIGHT
+          - CROWN_BASE_HEIGHT_DEFINITION_REQUIRES_CONFIRMATION
+
+      - indicator_id: TREE_DBH_PERCENTILE_WITHIN_SPECIES
+        name_cn: 同树种胸径百分位
+        status: ready
+        output_unit: percentile
+        input_fields:
+          tree_observations: [species, tree_dbh_cm]
+        formula: percentile_rank(tree_dbh_cm within same species)
+        output_field: dbh_percentile_within_species
+        calculation_type: relative_statistic
+        applicability:
+          required_conditions:
+            - species is not null
+            - tree_dbh_cm > 0
+            - same species sample size >= 5
+        interpretation:
+          evidence_level: relative_comparison
+          allowed: 描述该树胸径在同树种样本中的相对大小。
+          not_allowed: 不能直接判断年龄或生长优劣原因。
+        quality_flags:
+          - SMALL_REFERENCE_GROUP
+          - MISSING_SPECIES
+          - MISSING_TREE_DBH
+
+      - indicator_id: TREE_HEIGHT_PERCENTILE_WITHIN_SPECIES
+        name_cn: 同树种树高百分位
+        status: ready
+        output_unit: percentile
+        input_fields:
+          tree_observations: [species, tree_height_m]
+        formula: percentile_rank(tree_height_m within same species)
+        output_field: height_percentile_within_species
+        calculation_type: relative_statistic
+        applicability:
+          required_conditions:
+            - species is not null
+            - tree_height_m is not null
+            - same species sample size >= 5
+        interpretation:
+          evidence_level: relative_comparison
+          allowed: 描述该树树高在同树种样本中的相对位置。
+          not_allowed: 不能直接判断年龄或立地原因。
+        quality_flags:
+          - SMALL_REFERENCE_GROUP
+          - MISSING_SPECIES
+          - MISSING_TREE_HEIGHT
+
+      - indicator_id: TREE_CROWN_WIDTH_PERCENTILE_WITHIN_SPECIES
+        name_cn: 同树种冠幅百分位
+        status: partial
+        output_unit: percentile
+        input_fields:
+          tree_observations: [species, crown_width_mean_m]
+        formula: percentile_rank(crown_width_mean_m within same species)
+        output_field: crown_width_percentile_within_species
+        calculation_type: relative_statistic
+        applicability:
+          required_conditions:
+            - species is not null
+            - crown_width_mean_m is not null
+            - same species sample size >= 5
+        interpretation:
+          evidence_level: relative_comparison
+          allowed: 描述树冠大小相对位置。
+          not_allowed: 不能单独判断受压或冠层损伤。
+        quality_flags:
+          - SMALL_REFERENCE_GROUP
+          - MISSING_SPECIES
+          - MISSING_CROWN_WIDTH
+
+      - indicator_id: TREE_VOLUME
+        name_cn: 单木材积
+        status: requires_model
+        output_unit: m3
+        input_fields:
+          tree_observations: [species, tree_dbh_cm, tree_height_m]
+        formula: species_specific_volume_model(tree_dbh_cm, tree_height_m)
+        output_field: volume_m3
+        calculation_type: model_based
+        applicability:
+          required_conditions:
+            - species-specific volume model is formally registered and validated
+        interpretation:
+          evidence_level: model_result_if_validated
+          allowed: 仅在正式材积模型可用时作为模型结果输出。
+          not_allowed: 当前不能把旧 volume_m3 当作正式核验材积。
+        quality_flags:
+          - VOLUME_MODEL_NOT_FORMALLY_VALIDATED
+
+  tree_competition:
+    name_cn: 单木空间竞争指标
+    level: tree_or_tree_neighborhood
+    purpose: 利用单木坐标、邻木距离和大小描述局部竞争环境。
+    default_parameters:
+      radius_m: 5
+      min_neighbor_count_for_summary: 3
+    indicators:
+      - indicator_id: TREE_NEAREST_NEIGHBOR_DISTANCE
+        name_cn: 最近邻距离
+        status: ready
+        output_unit: m
+        input_fields:
+          tree_observations: [tree_id, tree_x_m, tree_y_m]
+        formula: min(distance(target_tree, other_tree))
+        output_field: nearest_neighbor_distance_m
+        calculation_type: deterministic_spatial
+        applicability:
+          required_conditions:
+            - target tree has tree_x_m and tree_y_m
+            - at least one other tree in comparison scope has coordinates
+        interpretation:
+          evidence_level: spatial_calculation
+          allowed: 描述对象木与最近邻木的空间距离。
+          not_allowed: 不能单独判断竞争强度或生长受限。
+        quality_flags:
+          - MISSING_TREE_COORDINATE
+          - NO_NEIGHBOR_WITH_COORDINATE
+
+      - indicator_id: TREE_NEIGHBOR_COUNT_WITHIN_RADIUS
+        name_cn: 固定半径邻木数量
+        status: ready
+        output_unit: count
+        input_fields:
+          tree_observations: [tree_id, tree_x_m, tree_y_m]
+        parameters:
+          radius_m: 5
+        formula: count(other_tree where distance <= radius_m)
+        output_field: neighbor_count_within_radius
+        calculation_type: deterministic_spatial
+        applicability:
+          required_conditions:
+            - target and neighbor coordinates are available
+            - radius_m > 0
+        interpretation:
+          evidence_level: spatial_calculation
+          allowed: 描述对象木附近局部拥挤程度。
+          not_allowed: 不能单独判断真实资源竞争强弱。
+        quality_flags:
+          - MISSING_TREE_COORDINATE
+          - RADIUS_PARAMETER_REQUIRED
+
+      - indicator_id: TREE_LOCAL_DENSITY_WITHIN_RADIUS
+        name_cn: 固定半径局部密度
+        status: ready
+        output_unit: stems_per_ha
+        input_fields:
+          tree_observations: [tree_id, tree_x_m, tree_y_m]
+        parameters:
+          radius_m: 5
+        formula: neighbor_count_within_radius / (pi * radius_m^2 / 10000)
+        output_field: local_density_stems_per_ha
+        calculation_type: deterministic_spatial
+        applicability:
+          required_conditions:
+            - neighbor_count_within_radius is available
+            - radius_m > 0
+        interpretation:
+          evidence_level: spatial_calculation
+          allowed: 描述局部单位面积邻木密度。
+          not_allowed: 不能直接等同于全样方林分密度。
+        quality_flags:
+          - RADIUS_PARAMETER_REQUIRED
+          - EDGE_EFFECT_NOT_CORRECTED
+
+      - indicator_id: TREE_HEGYI_COMPETITION_INDEX
+        name_cn: Hegyi竞争指数
+        status: ready
+        output_unit: index
+        input_fields:
+          tree_observations: [tree_id, tree_x_m, tree_y_m, tree_dbh_cm]
+        parameters:
+          radius_m: 5
+        formula: sum((neighbor_dbh_cm / target_dbh_cm) / distance_m for neighbors within radius_m)
+        output_field: hegyi_competition_index
+        calculation_type: deterministic_spatial_index
+        applicability:
+          required_conditions:
+            - target tree_dbh_cm > 0
+            - target and neighbor coordinates are available
+            - neighbor distance_m > 0
+        interpretation:
+          evidence_level: relative_competition_signal
+          allowed: 描述对象木周边邻木大小和距离叠加的相对竞争信号。
+          not_allowed: 不能单独判断死亡风险、受压原因或经营处方。
+        quality_flags:
+          - MISSING_TREE_DBH
+          - MISSING_TREE_COORDINATE
+          - ZERO_DISTANCE_PAIR
+          - EDGE_EFFECT_NOT_CORRECTED
+
+      - indicator_id: TREE_LARGER_NEIGHBOR_BASAL_AREA
+        name_cn: 半径内较大邻木断面积和
+        status: ready
+        output_unit: m2
+        input_fields:
+          tree_observations: [tree_id, tree_x_m, tree_y_m, tree_dbh_cm]
+        parameters:
+          radius_m: 5
+        formula: sum(basal_area_m2 of neighbors where neighbor_dbh_cm > target_dbh_cm and distance <= radius_m)
+        output_field: larger_neighbor_basal_area_m2
+        calculation_type: deterministic_spatial
+        applicability:
+          required_conditions:
+            - tree_dbh_cm > 0
+            - coordinates are available
+        interpretation:
+          evidence_level: relative_competition_signal
+          allowed: 描述周边较大邻木的潜在竞争背景。
+          not_allowed: 不能单独判断冠层受压或生长不良。
+        quality_flags:
+          - MISSING_TREE_DBH
+          - MISSING_TREE_COORDINATE
+          - EDGE_EFFECT_NOT_CORRECTED
+
+      - indicator_id: TREE_NEIGHBOR_MEAN_SIZE
+        name_cn: 半径内邻木平均大小
+        status: ready
+        output_unit: mixed
+        input_fields:
+          tree_observations: [tree_id, tree_x_m, tree_y_m, tree_dbh_cm, tree_height_m]
+        parameters:
+          radius_m: 5
+        formula: mean(neighbor_dbh_cm), mean(neighbor_tree_height_m) for neighbors within radius_m
+        output_field: neighbor_mean_size
+        calculation_type: descriptive_statistic
+        applicability:
+          required_conditions:
+            - coordinates are available
+            - at least one neighbor within radius
+        interpretation:
+          evidence_level: descriptive_statistic
+          allowed: 描述对象木邻域内树木平均大小。
+          not_allowed: 不能直接说明对象木受何种影响。
+        quality_flags:
+          - MISSING_TREE_COORDINATE
+          - NO_NEIGHBOR_WITHIN_RADIUS
+
+      - indicator_id: TREE_CONSPECIFIC_NEIGHBOR_RATIO
+        name_cn: 同种邻木比例
+        status: ready
+        output_unit: ratio
+        input_fields:
+          tree_observations: [tree_id, species, tree_x_m, tree_y_m]
+        parameters:
+          radius_m: 5
+        formula: conspecific_neighbor_count / total_neighbor_count within radius_m
+        output_field: conspecific_neighbor_ratio
+        calculation_type: deterministic_spatial
+        applicability:
+          required_conditions:
+            - species is not null
+            - coordinates are available
+            - total_neighbor_count > 0
+        interpretation:
+          evidence_level: descriptive_spatial_composition
+          allowed: 描述邻域内同种/异种组成。
+          not_allowed: 不能单独判断种间竞争强弱。
+        quality_flags:
+          - MISSING_SPECIES
+          - MISSING_TREE_COORDINATE
+          - NO_NEIGHBOR_WITHIN_RADIUS
+
+      - indicator_id: TREE_CROWN_OVERLAP_PROXY
+        name_cn: 冠幅重叠近似指标
+        status: partial
+        output_unit: count_or_area_proxy
+        input_fields:
+          tree_observations: [tree_id, tree_x_m, tree_y_m, crown_width_mean_m]
+        formula: overlap exists if distance_m < (target_crown_radius + neighbor_crown_radius)
+        output_field: crown_overlap_proxy
+        calculation_type: spatial_proxy_with_crown_shape_assumption
+        applicability:
+          required_conditions:
+            - coordinates are available
+            - crown_width_mean_m is available
+        interpretation:
+          evidence_level: proxy_signal
+          allowed: 作为冠幅水平重叠的近似筛查信号。
+          not_allowed: 不能当作真实冠层重叠面积或光竞争证据。
+        quality_flags:
+          - CROWN_OVERLAP_ASSUMES_CIRCULAR_CROWN
+          - MISSING_CROWN_WIDTH
+          - MISSING_TREE_COORDINATE
+
+      - indicator_id: TREE_EDGE_OR_GAP_DISTANCE
+        name_cn: 林缘或林窗距离
+        status: blocked
+        output_unit: m
+        input_fields:
+          required_external_data: [forest_edge_geometry, canopy_gap_geometry]
+        formula: distance(tree_point, edge_or_gap_boundary)
+        output_field: edge_or_gap_distance_m
+        calculation_type: spatial_geometry
+        applicability:
+          required_conditions:
+            - forest edge or canopy gap boundary is available
+        interpretation:
+          evidence_level: unavailable_until_data_added
+          allowed: 当前不能计算。
+          not_allowed: 不能根据单木坐标臆测林缘或林窗距离。
+        quality_flags:
+          - MISSING_EDGE_OR_GAP_GEOMETRY
