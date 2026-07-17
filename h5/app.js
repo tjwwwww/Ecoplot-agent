@@ -851,28 +851,27 @@ function startNewChat() {
   switchView("chat");
 }
 
-function renderHistoryList() {
-  const history = getChatHistory();
+async function renderHistoryList() {
+  const history = await fetchRemoteSessionList();
   if (!history.length) {
-    dom.historyList.innerHTML = `<div class="empty-state">暂无历史记录</div>`;
+    dom.historyList.innerHTML = `<div class="empty-state">\u6682\u65e0\u5386\u53f2\u8bb0\u5f55</div>`;
     return;
   }
   dom.historyList.innerHTML = history.map((item) => `
-    <button class="history-item" type="button" data-history-id="${item.id}">
+    <button class="history-item" type="button" data-session-id="${item.session_id}">
       <i data-lucide="message-square-text"></i>
       <span>
-        <span class="history-title">${escapeHtml(item.title || "未命名对话")}</span>
-        <span class="history-meta">${escapeHtml(formatHistoryTime(item.time))}</span>
+        <span class="history-title">${escapeHtml(item.title || "\u672a\u547d\u540d\u5bf9\u8bdd")}</span>
+        <span class="history-meta">${escapeHtml(formatHistoryTime(item.updated_at || item.created_at))}</span>
       </span>
     </button>
   `).join("");
   renderIcons();
 }
 
-function openHistoryPanel() {
-  saveCurrentChat();
+async function openHistoryPanel() {
   closeMoreMenu();
-  renderHistoryList();
+  await renderHistoryList();
   dom.historyPanel.classList.remove("hidden");
 }
 

@@ -239,46 +239,136 @@ def _gather_subplot_summary(subplot_ids: Optional[List[str]] = None) -> List[Dic
 
 
 # =============================================================================
-# AI 方案生成
+# AI 方案生成 — 使用智能体（ReAct Agent）分析生成
 # =============================================================================
-
-def _call_llm(prompt: str, system_prompt: str = "") -> str:
-    """调用 LLM 分析数据"""
-    try:
-        from provider import get_ai_response
-        full_prompt = f"{system_prompt}\n\n{prompt}" if system_prompt else prompt
-        result = get_ai_response(
-            content=full_prompt,
-            prompt="请根据上面的数据和要求，生成调查方案。直接输出 JSON。",
-            model="deepseek-ai/DeepSeek-V3.2",
-        )
-        return result
-    except Exception as exc:
-        print(f"[survey] LLM call failed: {exc}")
-        return f""
-
 
 def generate_survey_plan(user_request: str) -> Dict[str, Any]:
     """
-    根据用户的自然语言需求，生成调查方案。
+    根据用户的自然语言需求，使用智能体（ReAct Agent）生成调查方案。
 
     流程：
-    1. 收集数据库中的相关数据（树种、健康、气候等）
-    2. 使用 LLM 分析数据并生成结构化的调查建议
-    3. 保存到数据库并返回
-    """
-    print(f"[survey] 生成调查方案，用户需求: {user_request}")
+    1. 调用 agent.run_agent_chat()，智能体使用工具分析数据
+    2. 智能体逐步分析：查树种分布 → 健康异常 → 气候背景 → 竞争压力
+    3. 智能体结合用户需求综合判断，输出针对性方案
+    4. 解析 JSON → 验证 → 保存到数据库
 
-    # 收集数据上下文
+    与之前的硬编码方案不同，智能体可以自主决定查什么数据、怎么分析。
+    """
+    print(f"[survey] 🧠 使用智能体生成调查方案，需求: {user_request}")
+
+    try:
+        from agent import run_agent_chat
+    except Exception as exc:
+        print(f"[survey] 无法导入 agent: {exc}")
+        return {"status": "error", "message": f"智能体模块不可用: {exc}"}
+
+    # 构造智能体提示词
+    agent_prompt = f"""我需要去野外进行林业调查，请帮我生成一份详细的调查方案。
+
+## 我的调查需求
+{user_request}
+
+## 你的任务
+
+请利用你所有的工具能力（数据库查询、指标计算、竞争分析、气候分析等），完成以下步骤：
+
+### 步骤1：数据探索
+- 查询数据库中与我的需求相关的树种、样地、健康数据
+- 检查气候背景（近期降水、温度异常等）
+- 分析样地的结构指标（密度、胸径、树高等）
+
+### 步骤2：综合分析
+- 将我的需求与数据关联起来，找出真正需要关注的问题
+- 比如：如果我说「干旱影响」，你要分析近期降水数据 + 哪些树/样地最可能受干旱影响
+- 比如：如果我说「病虫害」，你要关注健康状态异常的树木
+- 如果我没有特定需求，做一次全面的样地健康巡检
+
+### 步骤3：生成方案
+
+你必须以严格的 JSON 格式输出最终方案（不要额外文字，只有一个 JSON 对象）：
+
+```json
+{{
+  "title": "方案标题（简洁明了，反映调查目的）",
+  "summary": "方案总体说明（调查目标、范围、预期发现的说明，2-3句话）",
+  "ai_analysis": "你的分析过程总结（你从数据中发现了什么，为什么这些树/样地被选中，2-4句话）",
+  "recommendations": [
+    {{
+      "tree_id": "具体树编号（如果是样地级建议填 null）",
+      "subplot_id": "样地编号",
+      "species": "树种名称",
+      "priority": "high/medium/low",
+      "category": "health_check/morphology/competition/climate_stress/species_observation/control",
+      "reason": "为什么调查这个（必须基于数据分析，有具体数据支撑）",
+      "suggested_actions": "到现场具体看什么、查什么"
+    }}
+  ]
+}}
+```
+
+### 要求
+1. **每条建议必须有数据支撑**：基于你查询到的真实数据，说明具体的数字依据
+2. **建议数量 15-30 条**（适合一次野外调查的工作量）
+3. **包含 2-3 棵健康对照树**，让现场有对比参考
+4. **按优先级排序**：high 是最需要关注的
+5. **必须使用数据库中真实存在的 tree_id**
+6. **类别多样化**：不要全是 morphology，要根据实际情况分类
+7. **reason 要具体**：比如"该树健康状态为'dear'，且近期降水偏少42%"，不要笼统说"状态异常"
+
+请开始分析！先使用工具查询数据，综合分析后再输出 JSON 方案。"""
+
+    try:
+        # 调用智能体 — 使用完整的 ReAct 循环（工具调用 + 推理）
+        result = run_agent_chat(
+            question=agent_prompt,
+            session_id=None,
+            client_id="survey_plan_generator",
+            context={"current_page": "survey_planning", "survey_mode": True},
+            options={
+                "max_tool_rounds": 10,
+                "history_limit": 0,
+            },
+        )
+
+        answer = result.get("answer", "")
+        used_tools = result.get("used_tools", [])
+
+        print(f"[survey] 智能体使用了 {len(used_tools)} 个工具")
+        print(f"[survey] 智能体回答前200字: {answer[:200]}")
+
+        # 解析 JSON
+        plan_data = _parse_llm_json(answer)
+
+        if not plan_data:
+            print("[survey] 智能体输出不是合法 JSON，尝试用 LLM 直接重试…")
+            # 兜底：把智能体的回答发给 LLM 提取 JSON
+            plan_data = _retry_extract_json(answer, user_request)
+
+        if plan_data and plan_data.get("recommendations"):
+            print(f"[survey] 成功解析方案: {plan_data.get('title', '无标题')}, "
+                  f"{len(plan_data['recommendations'])} 条建议")
+            return _save_plan_to_db(user_request, plan_data)
+
+        # 智能体返回了内容但没有成功解析 JSON → 用确定性逻辑作为最终兜底
+        print("[survey] 智能体未能输出结构化方案，使用规则兜底")
+        return _generate_deterministic_plan(user_request, _gather_survey_context())
+
+    except Exception as exc:
+        print(f"[survey] 智能体调用异常: {exc}")
+        import traceback
+        traceback.print_exc()
+        return {"status": "error", "message": f"智能体分析失败: {exc}"}
+
+
+def _gather_survey_context() -> Dict[str, Any]:
+    """收集调查上下文数据（供兜底方案使用）"""
     species = _gather_species_overview()
     anomalies = _gather_health_anomaly_trees(40)
     climate = _gather_climate_context()
     subplots = _gather_subplot_summary()
     topography = _gather_topography_context()
-
-    context_data = {
-        "user_request": user_request,
-        "species_overview": species[:15],  # 最多15个树种
+    return {
+        "species_overview": species[:15],
         "health_anomalies": anomalies,
         "climate_context": climate,
         "subplot_summaries": subplots[:15],
@@ -288,79 +378,34 @@ def generate_survey_plan(user_request: str) -> Dict[str, Any]:
         "total_subplots": len(subplots),
     }
 
-    system_prompt = """你是一个林业调查专家。你的任务是根据用户的需求和数据库中的现有数据，生成一份结构化的野外调查方案。
 
-你需要注意：
-1. 基于数据库中**真实存在**的树木和样地数据生成建议
-2. 每条建议必须有明确的原因（为什么调查这棵树/样地）
-3. 每条建议必须有具体的行动指引（去现场看什么、怎么判断）
-4. 按优先级排序：high（必须查）> medium（建议查）> low（可选查）
-5. 每个树种至少包括1-2棵健康对照树作为参考
-6. 建议数量控制在 15-30 条，适合一次野外调查
-7. 类别可以是：health_check（健康检查）、morphology（形态关注）、competition（竞争压力）、climate_stress（气候胁迫）、species_observation（物种观察）、control（对照）
-
-请分析用户需求，结合现有数据，输出严格 JSON 格式：
-{
-  "title": "调查方案标题",
-  "summary": "总体方案说明，包括调查目标、预期发现的说明",
-  "ai_analysis": "对用户需求的AI分析，包括数据观察和初步判断",
-  "recommendations": [
-    {
-      "tree_id": "树编号或null（如果是样地级建议）",
-      "subplot_id": "样地编号",
-      "species": "树种",
-      "priority": "high/medium/low",
-      "category": "类别",
-      "reason": "为什么查这个",
-      "suggested_actions": "到现场具体看什么"
-    }
-  ]
-}"""
-
-    # 将 context_data 转为 LLM 可读的文本
-    context_lines = ["## 当前数据库数据概况"]
-    context_lines.append(f"总树木数: {context_data['total_trees_in_db']}, 树种数: {context_data['total_species']}, 样地数: {context_data['total_subplots']}")
-
-    context_lines.append("\n### 树种概况")
-    context_lines.append(f"{'树种':<12} {'数量':<6} {'平均胸径':<10} {'平均树高':<10} {'健康%':<8} {'差%':<8}")
-    for s in context_data["species_overview"]:
-        context_lines.append(f"{s['species']:<12} {s['count']:<6} {s['avg_dbh']:<10} {s['avg_height']:<10} {s['health_good_pct']:<8} {s['health_poor_pct']:<8}")
-
-    context_lines.append("\n### 健康异常树木 (Top 40)")
-    context_lines.append(f"{'树编号':<14} {'样地':<8} {'树种':<10} {'胸径':<8} {'树高':<8} {'健康':<6} {'高径比':<8}")
-    for t in context_data["health_anomalies"]:
-        context_lines.append(f"{t['tree_id']:<14} {t['subplot_id']:<8} {t['species']:<10} {t['tree_dbh_cm']:<8} {t['tree_height_m']:<8} {t['health_status']:<6} {t['hdr']:<8}")
-
-    context_lines.append("\n### 气候背景")
-    if climate:
-        context_lines.append(json.dumps(climate, ensure_ascii=False, indent=2))
-    else:
-        context_lines.append("(无气候数据)")
-
-    context_lines.append("\n### 样地概况 (Top 15)")
-    context_lines.append(f"{'样地':<8} {'株数':<6} {'树种数':<8} {'平均胸径':<10} {'平均树高':<10} {'平均HDR':<8} {'枯死':<6} {'较差':<6}")
-    for s in context_data["subplot_summaries"]:
-        context_lines.append(f"{s['subplot_id']:<8} {s['tree_count']:<6} {s['species_count']:<8} {s['avg_dbh']:<10} {s['avg_height']:<10} {s['avg_hdr']:<8} {s['dead_count']:<6} {s['poor_count']:<6}")
-
-    context_lines.append(f"\n### 用户需求\n{user_request}")
-
-    full_context = "\n".join(context_lines)
-
+def _retry_extract_json(agent_answer: str, user_request: str) -> Optional[Dict[str, Any]]:
+    """当智能体回答不是纯 JSON 时，用 LLM 提取 JSON"""
     try:
-        llm_result = _call_llm(full_context, system_prompt)
-        print(f"[survey] LLM返回原始结果前200字: {llm_result[:200]}")
-    except Exception as exc:
-        print(f"[survey] LLM调用失败: {exc}")
-        return {"status": "error", "message": f"AI 分析失败: {exc}"}
+        from provider import get_ai_response
+        prompt = f"""从下面的文本中提取调查方案的 JSON 数据。
+文本是 AI 林业助手对调查需求的分析回复，其中应该包含了调查建议。
 
-    # 解析 JSON
-    plan_data = _parse_llm_json(llm_result)
-    if not plan_data:
-        # 解析失败时使用确定性规则生成方案
-        return _generate_deterministic_plan(user_request, context_data)
+用户需求：{user_request}
 
-    # 验证并保存方案
-    return _save_plan_to_db(user_request, plan_data)
+AI 回复：
+{agent_answer}
+
+请提取 JSON 格式的方案，格式要求：
+{{
+  "title": "方案标题",
+  "summary": "方案概述",
+  "ai_analysis": "分析说明",
+  "recommendations": [
+    {{"tree_id": "编号或null", "subplot_id": "样地", "species": "树种", "priority": "high/medium/low", "category": "类别", "reason": "原因", "suggested_actions": "行动"}}
+  ]
+}}
+
+只输出 JSON，不要其他文字。"""
+        text = get_ai_response(content=prompt, prompt="提取 JSON", temperature=0.1)
+        return _parse_llm_json(text)
+    except Exception:
+        return None
 
 
 def _parse_llm_json(text: str) -> Optional[Dict[str, Any]]:

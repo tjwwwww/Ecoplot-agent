@@ -279,48 +279,53 @@ def save_message(
 
 
 def list_chat_sessions(limit: int = 50, client_id: Optional[str] = None) -> List[Dict[str, Any]]:
-    with _connect_session_db() as conn:
-        sql = """
-        SELECT
-            s.session_id,
-            s.client_id,
-            s.created_at,
-            s.updated_at,
-            s.title,
-            s.last_focus_json,
-            COUNT(m.message_id) AS message_count,
-            (
-                SELECT m2.content
-                FROM agent_messages m2
-                WHERE m2.session_id = s.session_id AND m2.role = 'user'
-                ORDER BY m2.created_at ASC
-                LIMIT 1
-            ) AS first_user_message,
-            (
-                SELECT m3.content
-                FROM agent_messages m3
-                WHERE m3.session_id = s.session_id AND m3.role = 'user'
-                ORDER BY m3.created_at DESC
-                LIMIT 1
-            ) AS last_user_message
-        FROM agent_sessions s
-        LEFT JOIN agent_messages m ON m.session_id = s.session_id
-        """
-        params: List[Any] = []
-        if client_id:
-            sql += " WHERE s.client_id = ? "
-            params.append(client_id)
-        sql += """
-        GROUP BY s.session_id
-        ORDER BY s.updated_at DESC
-        LIMIT ?
-        """
-        params.append(int(limit))
-        rows = conn.execute(sql, tuple(params)).fetchall()
+    def _fetch_rows(where_sql: str = "", params: Optional[List[Any]] = None) -> List[sqlite3.Row]:
+        with _connect_session_db() as conn:
+            sql = """
+            SELECT
+                s.session_id,
+                s.client_id,
+                s.created_at,
+                s.updated_at,
+                s.title,
+                s.last_focus_json,
+                COUNT(m.message_id) AS message_count,
+                (
+                    SELECT m2.content
+                    FROM agent_messages m2
+                    WHERE m2.session_id = s.session_id AND m2.role = 'user'
+                    ORDER BY m2.created_at ASC
+                    LIMIT 1
+                ) AS first_user_message,
+                (
+                    SELECT m3.content
+                    FROM agent_messages m3
+                    WHERE m3.session_id = s.session_id AND m3.role = 'user'
+                    ORDER BY m3.created_at DESC
+                    LIMIT 1
+                ) AS last_user_message
+            FROM agent_sessions s
+            LEFT JOIN agent_messages m ON m.session_id = s.session_id
+            """
+            if where_sql:
+                sql += f" {where_sql} "
+            sql += """
+            GROUP BY s.session_id
+            ORDER BY s.updated_at DESC
+            LIMIT ?
+            """
+            query_params = list(params or [])
+            query_params.append(int(limit))
+            return conn.execute(sql, tuple(query_params)).fetchall()
+
+    if client_id:
+        rows = _fetch_rows("WHERE s.client_id = ?", [client_id])
+    else:
+        rows = _fetch_rows()
 
     sessions: List[Dict[str, Any]] = []
     for row in rows:
-        title = (row["first_user_message"] or row["title"] or "新对话").strip()
+        title = (row["first_user_message"] or row["title"] or "New Chat").strip()
         sessions.append({
             "session_id": row["session_id"],
             "client_id": row["client_id"],
@@ -332,7 +337,6 @@ def list_chat_sessions(limit: int = 50, client_id: Optional[str] = None) -> List
             "last_focus": _safe_json_loads(row["last_focus_json"] or "{}") or {},
         })
     return sessions
-
 
 def load_session_messages(session_id: str, limit: int = 200) -> List[Dict[str, Any]]:
     with _connect_session_db() as conn:
