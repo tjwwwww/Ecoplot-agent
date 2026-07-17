@@ -709,6 +709,32 @@ canonical_tree_observation_fields:
   - source_examples: [健康状况]
     target: health_status
 
+kg_property_mappings:
+  TreeObservation:
+    tree_x_m:
+      variable_id: VAR_TREE_X
+      label: 单木平面X坐标
+      unit: m
+      sqlite_table: tree_observations
+      sqlite_column: tree_x_m
+      access_path: "(:TreeIndividual)-[:HAS_OBSERVATION]->(:TreeObservation)"
+      query_pattern: "OPTIONAL MATCH (t)-[:HAS_OBSERVATION]->(obs:TreeObservation) RETURN obs.tree_x_m"
+    tree_y_m:
+      variable_id: VAR_TREE_Y
+      label: 单木平面Y坐标
+      unit: m
+      sqlite_table: tree_observations
+      sqlite_column: tree_y_m
+      access_path: "(:TreeIndividual)-[:HAS_OBSERVATION]->(:TreeObservation)"
+      query_pattern: "OPTIONAL MATCH (t)-[:HAS_OBSERVATION]->(obs:TreeObservation) RETURN obs.tree_y_m"
+  invalid_or_legacy_aliases:
+    TreeIndividual.x_coordinate: TreeObservation.tree_x_m
+    TreeIndividual.y_coordinate: TreeObservation.tree_y_m
+    TreeIndividual.x_m: TreeObservation.tree_x_m
+    TreeIndividual.y_m: TreeObservation.tree_y_m
+  rule: >-
+    单木坐标是调查观测值，当前知识图谱中应从 TreeObservation.tree_x_m 与 TreeObservation.tree_y_m 读取；
+    不应凭空查询 TreeIndividual.x_coordinate、TreeIndividual.y_coordinate、TreeIndividual.x_m 或 TreeIndividual.y_m。
 mvp_notes:
   - 平均冠幅原始值与按东西、南北冠幅重新计算的值应并存，不互相覆盖。
   - 调查日期未知时保留SurveyEvent，survey_date设为null，temporal_precision设为unknown。

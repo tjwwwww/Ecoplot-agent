@@ -59,6 +59,7 @@ except Exception as exc:
     PYPROJ_IMPORT_ERROR = str(exc)
 
 import forestry_spatial_tools as fst
+import survey_module as svm
 
 try:
     from forestry_visualization_engine import ForestryDataRepository
@@ -921,12 +922,14 @@ def _run_agent2(payload: AgentChatRequest, context: Dict[str, Any], mode: str, e
             return run_agent_report(
                 question=payload.question,
                 session_id=payload.session_id,
+                client_id=payload.client_id,
                 context=context,
                 options=options,
             )
         return run_agent_chat(
             question=payload.question,
             session_id=payload.session_id,
+            client_id=payload.client_id,
             context=context,
             options=options,
             event_callback=event_callback,
@@ -937,12 +940,14 @@ def _run_agent2(payload: AgentChatRequest, context: Dict[str, Any], mode: str, e
             return run_agent_report(
                 question=payload.question,
                 session_id=payload.session_id,
+                client_id=payload.client_id,
                 context=context,
                 options=options,
             )
         return run_agent_chat(
             question=payload.question,
             session_id=payload.session_id,
+            client_id=payload.client_id,
             context=context,
             options=options,
         )
@@ -1401,6 +1406,7 @@ def agent_chat(payload: AgentChatRequest, request: Request, authorized: bool = D
         "scope": scope,
         "context": context,
         "session_id": details.get("session_id") or payload.session_id,
+        "client_id": payload.client_id,
         "mode": mode,
         "answer_type": details.get("answer_type", "chat_answer"),
         "answer": details.get("answer", ""),
@@ -1513,7 +1519,11 @@ def agent_chat_stream(payload: AgentChatRequest, request: Request, authorized: b
 
 
 @app.get("/api/agent/sessions", tags=["agent"])
-def agent_sessions(limit: int = Query(default=50, ge=1, le=200), authorized: bool = Depends(verify_api_key)) -> Dict[str, Any]:
+def agent_sessions(
+    limit: int = Query(default=50, ge=1, le=200),
+    client_id: Optional[str] = Query(default=None),
+    authorized: bool = Depends(verify_api_key),
+) -> Dict[str, Any]:
     """返回已保存的智能体历史会话列表。"""
     try:
         from agent import list_chat_sessions
@@ -1521,7 +1531,7 @@ def agent_sessions(limit: int = Query(default=50, ge=1, le=200), authorized: boo
         raise HTTPException(status_code=503, detail=f"Agent session backend unavailable: {exc}") from exc
     return {
         "status": "success",
-        "sessions": list_chat_sessions(limit=limit),
+        "sessions": list_chat_sessions(limit=limit, client_id=client_id),
         "generated_at": _utc_now(),
     }
 
@@ -2055,6 +2065,159 @@ def api_plot_climate(
         ),
         request,
     )
+
+
+# =============================================================================
+# 野外调查方案管理（survey_module）
+# =============================================================================
+
+class SurveyPlanRequest(BaseModel):
+    request: str = Field(..., min_length=1, description="调查需求，如'想看看干旱对青海云杉的影响'")
+
+
+class ObservationRecordRequest(BaseModel):
+    plan_id: int
+    rec_id: Optional[int] = None
+    tree_id: Optional[str] = None
+    subplot_id: Optional[str] = None
+    species: Optional[str] = None
+    notes: str = ""
+    health_status: Optional[str] = None
+    pest_signs: Optional[str] = None
+    phenophase: Optional[str] = None
+    photo_paths: Optional[str] = None
+    latitude: Optional[float] = None
+    longitude: Optional[float] = None
+
+
+class UpdateObservationRequest(BaseModel):
+    notes: Optional[str] = None
+    health_status: Optional[str] = None
+    pest_signs: Optional[str] = None
+    phenophase: Optional[str] = None
+    photo_paths: Optional[str] = None
+
+
+@app.post("/api/survey/plan", tags=["survey"])
+def survey_generate_plan(payload: SurveyPlanRequest) -> Dict[str, Any]:
+    """
+    AI 生成调查方案
+    输入自然语言需求，输出结构化的调查方案（含树级/样地级建议列表）
+    """
+    try:
+        result = svm.generate_survey_plan(payload.request)
+        return result
+    except Exception as exc:
+        raise HTTPException(status_code=500, detail=f"方案生成失败: {exc}")
+
+
+@app.get("/api/survey/plans", tags=["survey"])
+def survey_list_plans(limit: int = Query(default=20, ge=1, le=100)) -> Dict[str, Any]:
+    """列出所有调查方案"""
+    try:
+        result = svm.list_plans(limit=limit)
+        return result
+    except Exception as exc:
+        raise HTTPException(status_code=500, detail=str(exc))
+
+
+@app.get("/api/survey/plans/{plan_id}", tags=["survey"])
+def survey_get_plan(plan_id: int) -> Dict[str, Any]:
+    """获取方案详情（含所有建议）"""
+    try:
+        result = svm.get_plan(plan_id)
+        if result["status"] == "error":
+            raise HTTPException(status_code=404, detail=result["message"])
+        return result
+    except HTTPException:
+        raise
+    except Exception as exc:
+        raise HTTPException(status_code=500, detail=str(exc))
+
+
+@app.put("/api/survey/plans/{plan_id}/status", tags=["survey"])
+def survey_update_plan_status(plan_id: int, status: str = Query(...)) -> Dict[str, Any]:
+    """更新方案状态: draft / active / completed / cancelled"""
+    try:
+        result = svm.update_plan_status(plan_id, status)
+        if result["status"] == "error":
+            raise HTTPException(status_code=400, detail=result["message"])
+        return result
+    except HTTPException:
+        raise
+    except Exception as exc:
+        raise HTTPException(status_code=500, detail=str(exc))
+
+
+@app.post("/api/survey/observations", tags=["survey"])
+def survey_save_observation(payload: ObservationRecordRequest) -> Dict[str, Any]:
+    """保存一条野外观察记录"""
+    try:
+        result = svm.save_observation(
+            plan_id=payload.plan_id,
+            rec_id=payload.rec_id,
+            tree_id=payload.tree_id,
+            subplot_id=payload.subplot_id,
+            species=payload.species,
+            notes=payload.notes,
+            health_status=payload.health_status,
+            pest_signs=payload.pest_signs,
+            phenophase=payload.phenophase,
+            photo_paths=payload.photo_paths,
+            latitude=payload.latitude,
+            longitude=payload.longitude,
+        )
+        return result
+    except Exception as exc:
+        raise HTTPException(status_code=500, detail=f"保存记录失败: {exc}")
+
+
+@app.put("/api/survey/observations/{obs_id}", tags=["survey"])
+def survey_update_observation(obs_id: int, payload: UpdateObservationRequest) -> Dict[str, Any]:
+    """更新观察记录"""
+    try:
+        kwargs = {k: v for k, v in (payload.model_dump() if hasattr(payload, "model_dump") else payload.dict()).items() if v is not None}
+        result = svm.update_observation(obs_id, **kwargs)
+        if result["status"] == "error":
+            raise HTTPException(status_code=404, detail=result["message"])
+        return result
+    except HTTPException:
+        raise
+    except Exception as exc:
+        raise HTTPException(status_code=500, detail=str(exc))
+
+
+@app.get("/api/survey/plans/{plan_id}/observations", tags=["survey"])
+def survey_plan_observations(plan_id: int) -> Dict[str, Any]:
+    """获取方案的所有观察记录"""
+    try:
+        return svm.get_plan_observations(plan_id)
+    except Exception as exc:
+        raise HTTPException(status_code=500, detail=str(exc))
+
+
+@app.put("/api/survey/recommendations/{rec_id}/status", tags=["survey"])
+def survey_update_rec_status(rec_id: int, status: str = Query(...)) -> Dict[str, Any]:
+    """更新单条建议状态: pending / completed / skipped"""
+    try:
+        result = svm.update_recommendation_status(rec_id, status)
+        return result
+    except Exception as exc:
+        raise HTTPException(status_code=500, detail=str(exc))
+
+
+@app.post("/api/survey/plans/{plan_id}/report", tags=["survey"])
+def survey_generate_report(plan_id: int) -> Dict[str, Any]:
+    """生成方案调查报告"""
+    try:
+        result = svm.generate_report(plan_id)
+        if result["status"] == "error":
+            raise HTTPException(status_code=404, detail=result["message"])
+        return result
+    except HTTPException:
+        raise
+    except Exception as exc:
+        raise HTTPException(status_code=500, detail=str(exc))
 
 
 if __name__ == "__main__":

@@ -23,6 +23,7 @@ const SPECIES_COLORS = [
 
 const CHAT_HISTORY_KEY = "forest-assistant-chat-history";
 const CHAT_STATE_KEY = "forest-assistant-current-chat";
+const CLIENT_ID_KEY = "forest-assistant-client-id";
 const DEFAULT_USER_TEXT = "请输入问题开始对话";
 const DEFAULT_ASSISTANT_TEXT = "我可以回答样方巡检、异常原因、树种结构和复核建议。";
 const DEMO_CHAT_HISTORY = [
@@ -53,6 +54,7 @@ const sampleStore = new Map();
 let activeSampleId = DEFAULT_SUBPLOT_ID;
 let selectedTreeId = "";
 let enabledSpecies = new Set();
+let currentClientId = getOrCreateClientId();
 let currentSessionId = getSavedChatState().sessionId || createSessionId();
 let currentConversationId = getSavedChatState().conversationId || Date.now();
 let chatMessages = [];
@@ -112,6 +114,37 @@ const dom = {
   plotDialog: document.querySelector("#plotDialog"),
   closeDialog: document.querySelector("#closeDialog"),
   dialogTitle: document.querySelector("#dialogTitle"),
+  surveyView: document.querySelector("#surveyView"),
+  surveyHome: document.querySelector("#surveyHome"),
+  surveyDetail: document.querySelector("#surveyDetail"),
+  surveyList: document.querySelector("#surveyList"),
+  newSurveyBtn: document.querySelector("#newSurveyBtn"),
+  surveyBackBtn: document.querySelector("#surveyBackBtn"),
+  surveyDetailTitle: document.querySelector("#surveyDetailTitle"),
+  surveyDetailStatus: document.querySelector("#surveyDetailStatus"),
+  surveyProgressBar: document.querySelector("#surveyProgressBar"),
+  surveyProgressFill: document.querySelector("#surveyProgressFill"),
+  surveyProgressText: document.querySelector("#surveyProgressText"),
+  surveyAiAnalysis: document.querySelector("#surveyAiAnalysis"),
+  surveyAiAnalysisText: document.querySelector("#surveyAiAnalysisText"),
+  surveyRecList: document.querySelector("#surveyRecList"),
+  surveyReportBtn: document.querySelector("#surveyReportBtn"),
+  surveyObsDialog: document.querySelector("#surveyObsDialog"),
+  surveyObsDialogTitle: document.querySelector("#surveyObsDialogTitle"),
+  surveyObsDialogClose: document.querySelector("#surveyObsDialogClose"),
+  surveyObsInfo: document.querySelector("#surveyObsInfo"),
+  surveyObsNotes: document.querySelector("#surveyObsNotes"),
+  surveyObsHealth: document.querySelector("#surveyObsHealth"),
+  surveyObsPest: document.querySelector("#surveyObsPest"),
+  surveyObsPheno: document.querySelector("#surveyObsPheno"),
+  surveyObsSkip: document.querySelector("#surveyObsSkip"),
+  surveyObsSave: document.querySelector("#surveyObsSave"),
+  surveyNewDialog: document.querySelector("#surveyNewDialog"),
+  surveyNewDialogClose: document.querySelector("#surveyNewDialogClose"),
+  surveyNewRequest: document.querySelector("#surveyNewRequest"),
+  surveyNewLoading: document.querySelector("#surveyNewLoading"),
+  surveyNewCancel: document.querySelector("#surveyNewCancel"),
+  surveyNewSubmit: document.querySelector("#surveyNewSubmit"),
 };
 
 function apiUrl(subplotId) {
@@ -595,16 +628,22 @@ function roundRect(ctx, x, y, width, height, radius) {
 
 function switchView(view) {
   const isChat = view === "chat";
+  const isMap = view === "map";
+  const isSurvey = view === "survey";
   dom.chatView.classList.toggle("active", isChat);
-  dom.mapView.classList.toggle("active", !isChat);
+  dom.mapView.classList.toggle("active", isMap);
+  dom.surveyView.classList.toggle("active", isSurvey);
 
   [...dom.segments, ...dom.bottomTabs].forEach((button) => {
     button.classList.toggle("active", button.dataset.view === view);
   });
 
   requestAnimationFrame(() => {
-    if (!isChat && getSample()) {
+    if (isMap && getSample()) {
       drawPlot(dom.plotCanvas, getSample(), getVisibleTrees(), selectedTreeId);
+    }
+    if (isSurvey) {
+      loadSurveyList();
     }
   });
 }
@@ -722,6 +761,7 @@ function saveChatState() {
     JSON.stringify({
       sessionId: currentSessionId,
       conversationId: currentConversationId,
+      clientId: currentClientId,
     }),
   );
 }
@@ -869,27 +909,63 @@ async function fetchRemoteSessionMessages(sessionId) {
   ));
 }
 
-async function restoreHistoryItem(id) {
-  const item = getChatHistory().find((entry) => String(entry.id) === String(id));
-  if (!item) return;
-  currentSessionId = item.sessionId || createSessionId();
-  currentConversationId = item.id || Date.now();
+async function fetchRemoteSessionList() {
+  const params = new URLSearchParams({ limit: "50" });
+  if (currentClientId) params.set("client_id", currentClientId);
+  const response = await fetch(`/api/agent/sessions?${params.toString()}`);
+  if (!response.ok) return [];
+  const payload = await response.json();
+  return Array.isArray(payload.sessions) ? payload.sessions : [];
+}
+
+async function restoreHistoryItem(sessionId) {
+  if (!sessionId) return;
+  const messages = await fetchRemoteSessionMessages(sessionId);
+  currentSessionId = sessionId;
+  currentConversationId = Date.now();
   saveChatState();
-  chatMessages = normalizeStoredMessages(item);
+  chatMessages = messages.length ? messages : [createMessage("assistant", DEFAULT_ASSISTANT_TEXT, { id: "welcome" })];
   activeAssistantMessageId = "";
   renderChatMessages();
   closeHistoryPanel();
   switchView("chat");
-  try {
-    const remoteMessages = await fetchRemoteSessionMessages(currentSessionId);
-    if (remoteMessages.length) {
-      chatMessages = remoteMessages;
-      renderChatMessages();
-      saveCurrentChat();
-    }
-  } catch (error) {
-    console.warn("加载远程历史失败", error);
+}
+
+
+async function restoreCurrentChatOnLoad() {
+  const saved = getSavedChatState();
+  if (saved.clientId && saved.clientId !== currentClientId) {
+    currentClientId = saved.clientId;
   }
+
+  if (saved.sessionId) {
+    const rememberedMessages = await fetchRemoteSessionMessages(saved.sessionId);
+    if (rememberedMessages.length) {
+      currentSessionId = saved.sessionId;
+      currentConversationId = saved.conversationId || Date.now();
+      chatMessages = rememberedMessages;
+      activeAssistantMessageId = "";
+      renderChatMessages();
+      saveChatState();
+      return;
+    }
+  }
+
+  const sessions = await fetchRemoteSessionList();
+  const matched = sessions[0] || null;
+
+  if (matched) {
+    currentSessionId = matched.session_id || currentSessionId;
+    currentConversationId = saved.conversationId || Date.now();
+    const messages = await fetchRemoteSessionMessages(currentSessionId);
+    chatMessages = messages.length ? messages : [createMessage("assistant", DEFAULT_ASSISTANT_TEXT, { id: "welcome" })];
+    activeAssistantMessageId = "";
+    renderChatMessages();
+  } else {
+    renderWelcomeChat();
+  }
+
+  saveChatState();
 }
 
 async function answerChat(text) {
@@ -901,6 +977,8 @@ async function answerChat(text) {
   chatMessages.push(userMessage, assistantMessage);
   activeAssistantMessageId = assistantMessage.id;
   renderChatMessages();
+  saveCurrentChat();
+  saveChatState();
   resetThinking();
   setChatStreaming(true);
   try {
@@ -912,6 +990,8 @@ async function answerChat(text) {
   } catch (error) {
     updateAssistantMessage(activeAssistantMessageId, `问答接口调用失败：${error.message}`);
     collapseThinking();
+    saveCurrentChat();
+    saveChatState();
   } finally {
     setChatStreaming(false);
   }
@@ -926,6 +1006,7 @@ async function streamAgentAnswer(question) {
     },
     body: JSON.stringify({
       session_id: currentSessionId,
+      client_id: currentClientId,
       question,
       mode: "chat",
       context: {
@@ -1430,7 +1511,9 @@ function renderInlineMarkdown(text) {
 function renderImage(url, alt = "") {
   const safeUrl = normalizeArtifactUrl(String(url || "").trim());
   if (!safeUrl) return "";
-  return `<figure class="chat-image"><img src="${escapeAttribute(safeUrl)}" alt="${escapeAttribute(alt || "图表")}" loading="lazy" /><figcaption>${escapeHtml(alt || "图表")}</figcaption></figure>`;
+  const caption = alt || "??";
+  const escapedUrl = escapeAttribute(safeUrl);
+  return `<figure class="chat-image" data-src="${escapedUrl}"><img src="${escapedUrl}" alt="${escapeAttribute(caption)}" loading="lazy" onerror="this.closest('figure').classList.add('image-load-failed'); this.style.display='none';" /><figcaption>${escapeHtml(caption)}</figcaption><p class="image-error">???????<a href="${escapedUrl}" target="_blank" rel="noopener">??????</a></p></figure>`;
 }
 
 function renderArtifacts(artifacts = []) {
@@ -1455,10 +1538,31 @@ function renderArtifacts(artifacts = []) {
 
 function normalizeArtifactUrl(url) {
   if (!url) return "";
-  if (/^https?:\/\//i.test(url)) return url;
-  if (url.startsWith("/")) return url;
-  if (url.includes("\\")) return "";
-  return url;
+  let value = String(url).trim().replace(/^<|>$/g, "").replace(/^['"]|['"]$/g, "");
+  if (!value) return "";
+
+  try {
+    const parsed = new URL(value, window.location.origin);
+    if (parsed.pathname.startsWith("/visualizations/")) {
+      return parsed.pathname + parsed.search;
+    }
+    if (parsed.origin === window.location.origin) return parsed.pathname + parsed.search;
+    if (/^https?:\/\//i.test(value)) return value;
+  } catch {
+    // Continue with path normalization.
+  }
+
+  value = value.replace(/\\/g, "/");
+  const filename = value.split("/").filter(Boolean).pop() || "";
+
+  if (value.startsWith("/visualizations/")) return value;
+  if (value.startsWith("visualizations/")) return `/${value}`;
+  if (/\.(png|jpg|jpeg|webp|gif|svg|html)(\?|$)/i.test(filename)) {
+    return `/visualizations/${filename}`;
+  }
+
+  if (value.startsWith("/")) return value;
+  return value;
 }
 
 function createSessionId() {
@@ -1511,7 +1615,7 @@ function bindEvents() {
 
   dom.historyList.addEventListener("click", (event) => {
     const item = event.target.closest(".history-item");
-    if (item) restoreHistoryItem(item.dataset.historyId);
+    if (item) restoreHistoryItem(item.dataset.sessionId);
   });
 
   document.addEventListener("click", (event) => {
@@ -1569,6 +1673,357 @@ function bindEvents() {
     drawPlot(dom.plotCanvas, getSample(), getVisibleTrees(), selectedTreeId);
     if (dom.plotDialog.open) drawPlot(dom.largePlotCanvas, getSample(), getVisibleTrees(), selectedTreeId);
   });
+
+  // ===== 调查模块初始化 =====
+  initSurveyEventListeners();
+}
+
+// =========================================================================
+// 野外调查模块 (Survey)
+// =========================================================================
+
+let currentPlanId = null;
+let currentRecId = null;
+
+function initSurveyEventListeners() {
+  // 新建调查方案
+  addClickListener(dom.newSurveyBtn, () => {
+    dom.surveyNewDialog.showModal();
+  });
+  addClickListener(dom.surveyNewDialogClose, () => dom.surveyNewDialog.close());
+  addClickListener(dom.surveyNewCancel, () => dom.surveyNewDialog.close());
+
+  addClickListener(dom.surveyNewSubmit, async () => {
+    const request = dom.surveyNewRequest.value.trim();
+    if (!request) { alert("请输入调查需求"); return; }
+
+    dom.surveyNewLoading.style.display = "block";
+    dom.surveyNewSubmit.disabled = true;
+
+    try {
+      const resp = await fetch("/api/survey/plan", {
+        method: "POST",
+        headers: { "Content-Type": "application/json" },
+        body: JSON.stringify({ request }),
+      });
+      const data = await resp.json();
+      if (data.status === "success" && data.plan) {
+        dom.surveyNewDialog.close();
+        dom.surveyNewRequest.value = "";
+        dom.surveyNewLoading.style.display = "none";
+        dom.surveyNewSubmit.disabled = false;
+        openSurveyPlan(data.plan.plan_id);
+      } else {
+        alert("生成方案失败: " + (data.message || "未知错误"));
+      }
+    } catch (err) {
+      alert("网络错误: " + err.message);
+    }
+    dom.surveyNewLoading.style.display = "none";
+    dom.surveyNewSubmit.disabled = false;
+  });
+
+  // 返回按钮
+  addClickListener(dom.surveyBackBtn, () => {
+    dom.surveyDetail.classList.add("hidden");
+    dom.surveyHome.classList.remove("hidden");
+    loadSurveyList();
+  });
+
+  // 生成报告
+  addClickListener(dom.surveyReportBtn, async () => {
+    if (!currentPlanId) return;
+    try {
+      const resp = await fetch(`/api/survey/plans/${currentPlanId}/report`, {
+        method: "POST",
+      });
+      const data = await resp.json();
+      if (data.status === "success") {
+        showSurveyReport(data);
+      } else {
+        alert("生成报告失败: " + (data.message || ""));
+      }
+    } catch (err) {
+      alert("网络错误: " + err.message);
+    }
+  });
+
+  // 观察记录弹窗
+  addClickListener(dom.surveyObsDialogClose, () => dom.surveyObsDialog.close());
+  addClickListener(dom.surveyObsSave, saveSurveyObservation);
+  addClickListener(dom.surveyObsSkip, skipSurveyObservation);
+}
+
+// ---- 加载方案列表 ----
+async function loadSurveyList() {
+  try {
+    const resp = await fetch("/api/survey/plans?limit=20");
+    const data = await resp.json();
+    if (data.status !== "success") {
+      dom.surveyList.innerHTML = `<div class="survey-empty">加载失败</div>`;
+      return;
+    }
+    const plans = data.plans || [];
+    if (!plans.length) {
+      dom.surveyList.innerHTML = `<div class="survey-empty">暂无调查方案，点击上方按钮新建</div>`;
+      return;
+    }
+    dom.surveyList.innerHTML = plans.map(p => {
+      const statusClass = p.status || "draft";
+      const statusLabel = {draft: "草稿", active: "进行中", completed: "已完成", cancelled: "已取消"}[statusClass] || statusClass;
+      const desc = (p.summary || p.ai_analysis || "").slice(0, 80);
+      return `
+        <div class="survey-card" data-plan-id="${p.plan_id}">
+          <div class="survey-card-head">
+            <span class="survey-card-title">${escapeHtml(p.title || "未命名方案")}</span>
+            <span class="survey-card-status ${statusClass}">${statusLabel}</span>
+          </div>
+          <div class="survey-card-meta">
+            <span>🌳 ${p.tree_count || 0} 株</span>
+            <span>📍 ${p.subplot_count || 0} 样地</span>
+            <span>✅ ${p.completed_count || 0}/${p.tree_count || 0}</span>
+            <span>📅 ${p.created_at || ""}</span>
+          </div>
+          ${desc ? `<div class="survey-card-desc">${escapeHtml(desc)}</div>` : ""}
+        </div>
+      `;
+    }).join("");
+
+    // 点击卡片打开方案
+    dom.surveyList.querySelectorAll(".survey-card").forEach(card => {
+      card.addEventListener("click", () => {
+        const pid = parseInt(card.dataset.planId);
+        openSurveyPlan(pid);
+      });
+    });
+  } catch (err) {
+    dom.surveyList.innerHTML = `<div class="survey-empty">加载失败: ${err.message}</div>`;
+  }
+}
+
+// ---- 打开方案详情 ----
+async function openSurveyPlan(planId) {
+  currentPlanId = planId;
+  try {
+    const resp = await fetch(`/api/survey/plans/${planId}`);
+    const data = await resp.json();
+    if (data.status !== "success" || !data.plan) {
+      alert("获取方案失败");
+      return;
+    }
+    const plan = data.plan;
+    const recs = plan.recommendations || [];
+
+    dom.surveyHome.classList.add("hidden");
+    dom.surveyDetail.classList.remove("hidden");
+
+    dom.surveyDetailTitle.textContent = plan.title || "调查方案";
+    const statusMap = {draft: "草稿", active: "进行中", completed: "已完成", cancelled: "已取消"};
+    dom.surveyDetailStatus.textContent = statusMap[plan.status] || plan.status;
+    dom.surveyDetailStatus.className = "survey-status-badge " + (plan.status || "draft");
+
+    // 进度
+    const total = recs.length;
+    const completed = plan.completed_count || recs.filter(r => r.status === "completed").length;
+    const pct = total > 0 ? Math.round(completed / total * 100) : 0;
+    dom.surveyProgressFill.style.width = pct + "%";
+    dom.surveyProgressText.textContent = `${completed}/${total}`;
+
+    // AI 分析
+    dom.surveyAiAnalysisText.textContent = plan.ai_analysis || "（无 AI 分析）";
+
+    // 渲染建议列表
+    renderSurveyRecs(recs);
+
+    switchView("survey");
+  } catch (err) {
+    alert("加载方案失败: " + err.message);
+  }
+}
+
+// ---- 渲染建议列表 ----
+function renderSurveyRecs(recs) {
+  if (!recs.length) {
+    dom.surveyRecList.innerHTML = `<div class="survey-empty">该方案暂无调查建议</div>`;
+    return;
+  }
+
+  dom.surveyRecList.innerHTML = recs.map(rec => {
+    const priority = rec.priority || "medium";
+    const status = rec.status || "pending";
+    const treeInfo = rec.tree_id ? `🌲 ${rec.tree_id}` : `📍 样地 ${rec.subplot_id || "?"}`;
+    const speciesInfo = rec.species ? `（${rec.species}）` : "";
+    const categoryMap = {
+      health_check: "健康检查", morphology: "形态关注", competition: "竞争压力",
+      climate_stress: "气候胁迫", species_observation: "物种观察", control: "对照",
+    };
+    const categoryLabel = categoryMap[rec.category] || rec.category || "未分类";
+    const priorityLabel = {high: "高", medium: "中", low: "低"}[priority] || priority;
+    const isCompleted = status === "completed";
+    const isSkipped = status === "skipped";
+
+    return `
+      <div class="survey-rec-card ${priority} ${status}" data-rec-id="${rec.rec_id}">
+        <div class="survey-rec-head">
+          <span class="survey-rec-tree">${treeInfo} ${speciesInfo}</span>
+          <span class="survey-rec-tag ${priority}">${priorityLabel}</span>
+        </div>
+        <div class="survey-rec-meta">
+          <span class="survey-rec-chip">${categoryLabel}</span>
+          <span class="survey-rec-chip">样地 ${rec.subplot_id || "?"}</span>
+        </div>
+        <div class="survey-rec-reason">${escapeHtml(rec.reason || "")}</div>
+        <div class="survey-rec-actions"><strong>建议行动：</strong>${escapeHtml(rec.suggested_actions || "")}</div>
+        <div class="survey-rec-btns">
+          <button class="survey-rec-btn record ${isCompleted ? 'completed' : ''}" data-rec-id="${rec.rec_id}">
+            <i data-lucide="${isCompleted ? 'check-circle' : 'clipboard-list'}"></i>
+            ${isCompleted ? '已记录' : '记录'}
+          </button>
+          <button class="survey-rec-btn skip ${isSkipped ? 'skipped' : ''}" data-rec-id="${rec.rec_id}">
+            <i data-lucide="${isSkipped ? 'x-circle' : 'skip-forward'}"></i>
+            ${isSkipped ? '已跳过' : '跳过'}
+          </button>
+        </div>
+      </div>
+    `;
+  }).join("");
+
+  // 更新图标
+  if (window.lucide) lucide.createIcons();
+
+  // 绑定事件
+  dom.surveyRecList.querySelectorAll(".survey-rec-btn.record").forEach(btn => {
+    btn.addEventListener("click", () => {
+      const recId = parseInt(btn.dataset.recId);
+      openObservationDialog(recId);
+    });
+  });
+  dom.surveyRecList.querySelectorAll(".survey-rec-btn.skip").forEach(btn => {
+    btn.addEventListener("click", async () => {
+      const recId = parseInt(btn.dataset.recId);
+      await skipRecommendation(recId);
+    });
+  });
+}
+
+// ---- 打开观察记录弹窗 ----
+function openObservationDialog(recId) {
+  currentRecId = recId;
+  const card = dom.surveyRecList.querySelector(`.survey-rec-card[data-rec-id="${recId}"]`);
+  if (card) {
+    const treeText = card.querySelector(".survey-rec-tree")?.textContent || "";
+    const reason = card.querySelector(".survey-rec-reason")?.textContent || "";
+    const actions = card.querySelector(".survey-rec-actions")?.textContent || "";
+    dom.surveyObsInfo.innerHTML = `<strong>${escapeHtml(treeText)}</strong><br/>
+      <span style="color:var(--muted);font-size:12px;">原因：${escapeHtml(reason)}</span>`;
+  }
+  dom.surveyObsNotes.value = "";
+  dom.surveyObsHealth.value = "";
+  dom.surveyObsPest.value = "";
+  dom.surveyObsPheno.value = "";
+  dom.surveyObsDialog.showModal();
+}
+
+// ---- 保存观察记录 ----
+async function saveSurveyObservation() {
+  if (!currentPlanId || !currentRecId) return;
+
+  const payload = {
+    plan_id: currentPlanId,
+    rec_id: currentRecId,
+    notes: dom.surveyObsNotes.value.trim(),
+    health_status: dom.surveyObsHealth.value || null,
+    pest_signs: dom.surveyObsPest.value || null,
+    phenophase: dom.surveyObsPheno.value || null,
+  };
+
+  try {
+    const resp = await fetch("/api/survey/observations", {
+      method: "POST",
+      headers: { "Content-Type": "application/json" },
+      body: JSON.stringify(payload),
+    });
+    const data = await resp.json();
+    if (data.status === "success") {
+      dom.surveyObsDialog.close();
+      await updateRecStatus(currentRecId, "completed");
+    } else {
+      alert("保存失败: " + (data.message || ""));
+    }
+  } catch (err) {
+    alert("网络错误: " + err.message);
+  }
+}
+
+// ---- 跳过建议 ----
+async function skipSurveyObservation() {
+  if (!currentRecId) return;
+  dom.surveyObsDialog.close();
+  await updateRecStatus(currentRecId, "skipped");
+}
+
+async function skipRecommendation(recId) {
+  await updateRecStatus(recId, "skipped");
+}
+
+async function updateRecStatus(recId, status) {
+  try {
+    const resp = await fetch(`/api/survey/recommendations/${recId}/status?status=${status}`, {
+      method: "PUT",
+    });
+    const data = await resp.json();
+    if (data.status === "success") {
+      if (currentPlanId) openSurveyPlan(currentPlanId);
+    }
+  } catch (err) {
+    console.error("更新状态失败", err);
+  }
+}
+
+// ---- 显示报告 ----
+function showSurveyReport(data) {
+  const report = data.report || "";
+  const stats = data.stats || {};
+
+  const statsHtml = `
+    <div style="display:grid;grid-template-columns:repeat(3,1fr);gap:8px;margin-bottom:14px;">
+      <div style="padding:10px;border-radius:8px;background:#edf6f1;text-align:center;">
+        <div style="font-size:24px;font-weight:750;color:var(--green-800);">${stats.completed || 0}</div>
+        <div style="font-size:12px;color:var(--muted);">已完成</div>
+      </div>
+      <div style="padding:10px;border-radius:8px;background:#fff2e7;text-align:center;">
+        <div style="font-size:24px;font-weight:750;color:var(--warning);">${stats.total - stats.completed - stats.skipped || 0}</div>
+        <div style="font-size:12px;color:var(--muted);">待完成</div>
+      </div>
+      <div style="padding:10px;border-radius:8px;background:#e8f4ee;text-align:center;">
+        <div style="font-size:24px;font-weight:750;color:#3d8b63;">${stats.completion_rate || 0}%</div>
+        <div style="font-size:12px;color:var(--muted);">完成率</div>
+      </div>
+    </div>
+  `;
+
+  // 在报告按钮上方插入报告内容
+  const reportHtml = `
+    <div class="survey-report-view">
+      ${statsHtml}
+      <pre style="white-space:pre-wrap;font-family:inherit;margin:0;">${escapeHtml(report)}</pre>
+    </div>
+  `;
+
+  // 移除旧的报告视图
+  const oldReport = document.querySelector(".survey-report-view");
+  if (oldReport) oldReport.remove();
+
+  dom.surveyReportBtn.insertAdjacentHTML("beforebegin", reportHtml);
+  dom.surveyReportBtn.textContent = "📄 重新生成报告";
+}
+
+// ---- 工具函数 ----
+function escapeHtml(str) {
+  if (!str) return "";
+  const div = document.createElement("div");
+  div.textContent = str;
+  return div.innerHTML;
 }
 
 function formatValue(value, unit = "") {
@@ -1611,10 +2066,8 @@ function initApp() {
     console.error("事件绑定失败", error);
   }
   try {
-    seedDemoHistory();
-    renderWelcomeChat();
-    saveChatState();
     renderIcons();
+    restoreCurrentChatOnLoad();
   } catch (error) {
     console.error("页面初始化失败", error);
     const container = ensureChatMessagesContainer();
@@ -1630,3 +2083,4 @@ if (document.readyState === "loading") {
 } else {
   initApp();
 }
+

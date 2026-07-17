@@ -443,6 +443,28 @@ select:disabled {
   text-align: center;
 }
 
+
+.image-error {
+  display: none;
+  margin: 8px 0 0;
+  padding: 8px 10px;
+  border: 1px solid #f0c9c9;
+  border-radius: 8px;
+  background: #fff7f7;
+  color: #9f2d2d;
+  font-size: 12px;
+  word-break: break-all;
+}
+
+.image-load-failed .image-error {
+  display: block;
+}
+
+.image-error a {
+  color: #0f7a4f;
+  font-weight: 700;
+}
+
 .artifact-list {
   display: grid;
   gap: 8px;
@@ -1375,4 +1397,587 @@ body.keyboard-open .bottom-tabs {
   50% {
     transform: scale(1.08);
   }
+}
+
+/* =========================================================================
+   野外调查模式 (survey)
+   ========================================================================= */
+
+.survey-hero {
+  padding: 20px 0 16px;
+  text-align: center;
+}
+
+.survey-hero h2 {
+  margin: 0 0 6px;
+  font-size: 24px;
+  color: var(--green-900);
+}
+
+.survey-hero-desc {
+  margin: 0 0 16px;
+  color: var(--muted);
+  font-size: 14px;
+  line-height: 1.45;
+}
+
+.survey-new-btn {
+  display: inline-flex;
+  align-items: center;
+  gap: 8px;
+  min-height: 48px;
+  padding: 0 28px;
+  border: 0;
+  border-radius: 999px;
+  background: linear-gradient(135deg, var(--green-700), var(--green-900));
+  color: #fff;
+  font-size: 17px;
+  font-weight: 700;
+  box-shadow: 0 8px 18px rgba(15, 106, 69, 0.25);
+}
+
+.survey-new-btn svg {
+  width: 22px;
+  height: 22px;
+}
+
+.survey-list-section {
+  margin-top: 20px;
+}
+
+.survey-list-section h3 {
+  margin: 0 0 12px;
+  font-size: 17px;
+  color: var(--ink);
+}
+
+.survey-list {
+  display: grid;
+  gap: 10px;
+}
+
+.survey-empty {
+  padding: 32px 16px;
+  color: var(--muted);
+  font-size: 14px;
+  text-align: center;
+}
+
+.survey-card {
+  padding: 14px;
+  border: 1px solid var(--line);
+  border-radius: 10px;
+  background: #fff;
+  cursor: pointer;
+  transition: box-shadow 0.15s;
+}
+
+.survey-card:active {
+  box-shadow: 0 0 0 2px rgba(15, 106, 69, 0.12);
+}
+
+.survey-card-head {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  gap: 8px;
+  margin-bottom: 6px;
+}
+
+.survey-card-title {
+  font-weight: 750;
+  font-size: 16px;
+  color: var(--ink);
+  line-height: 1.35;
+}
+
+.survey-card-status {
+  flex-shrink: 0;
+  padding: 3px 10px;
+  border-radius: 999px;
+  font-size: 12px;
+  font-weight: 700;
+}
+
+.survey-card-status.active {
+  background: #eaf8f0;
+  color: var(--green-800);
+}
+
+.survey-card-status.completed {
+  background: #e8f4ee;
+  color: #3d8b63;
+}
+
+.survey-card-status.draft {
+  background: #edf0ef;
+  color: #606967;
+}
+
+.survey-card-meta {
+  display: flex;
+  gap: 12px;
+  color: var(--muted);
+  font-size: 12px;
+}
+
+.survey-card-desc {
+  margin-top: 6px;
+  color: #35413d;
+  font-size: 13px;
+  line-height: 1.45;
+  display: -webkit-box;
+  -webkit-line-clamp: 2;
+  -webkit-box-orient: vertical;
+  overflow: hidden;
+}
+
+/* 方案详情 */
+.survey-detail-head {
+  display: flex;
+  align-items: flex-start;
+  gap: 10px;
+  margin-bottom: 14px;
+}
+
+.survey-back-btn {
+  display: grid;
+  flex: 0 0 40px;
+  width: 40px;
+  height: 40px;
+  place-items: center;
+  border: 1px solid var(--line);
+  border-radius: 50%;
+  background: #fff;
+  color: var(--ink);
+}
+
+.survey-back-btn svg {
+  width: 22px;
+  height: 22px;
+}
+
+.survey-detail-head > div {
+  flex: 1;
+  min-width: 0;
+}
+
+.survey-detail-head h2 {
+  margin: 0 0 4px;
+  font-size: 20px;
+  line-height: 1.25;
+  word-break: break-word;
+}
+
+.survey-status-badge {
+  display: inline-block;
+  padding: 3px 12px;
+  border-radius: 999px;
+  font-size: 12px;
+  font-weight: 700;
+}
+
+.survey-status-badge.active {
+  background: #eaf8f0;
+  color: var(--green-800);
+}
+
+.survey-status-badge.completed {
+  background: #e8f4ee;
+  color: #3d8b63;
+}
+
+.survey-status-badge.draft {
+  background: #edf0ef;
+  color: #606967;
+}
+
+/* 进度条 */
+.survey-progress-bar {
+  position: relative;
+  height: 24px;
+  margin-bottom: 14px;
+  border-radius: 999px;
+  background: #edf0ef;
+  overflow: hidden;
+}
+
+.survey-progress-fill {
+  height: 100%;
+  border-radius: 999px;
+  background: linear-gradient(90deg, var(--green-700), var(--green-800));
+  transition: width 0.4s ease;
+}
+
+.survey-progress-text {
+  position: absolute;
+  top: 50%;
+  left: 50%;
+  transform: translate(-50%, -50%);
+  color: var(--ink);
+  font-size: 12px;
+  font-weight: 750;
+  text-shadow: 0 0 4px rgba(255,255,255,0.7);
+}
+
+/* AI 分析折叠 */
+.survey-ai-analysis {
+  margin-bottom: 14px;
+  padding: 12px;
+  border: 1px solid #e0ebe4;
+  border-radius: 8px;
+  background: #f5fbf8;
+}
+
+.survey-ai-analysis summary {
+  cursor: pointer;
+  color: var(--green-800);
+  font-weight: 700;
+  font-size: 14px;
+}
+
+.survey-ai-analysis p {
+  margin: 10px 0 0;
+  color: #26312d;
+  font-size: 13px;
+  line-height: 1.55;
+  white-space: pre-wrap;
+}
+
+/* 建议列表 */
+.survey-rec-list {
+  display: grid;
+  gap: 10px;
+  margin-bottom: 16px;
+}
+
+.survey-rec-card {
+  padding: 14px;
+  border: 1px solid var(--line);
+  border-radius: 10px;
+  background: #fff;
+}
+
+.survey-rec-card.high {
+  border-left: 4px solid var(--danger);
+}
+
+.survey-rec-card.medium {
+  border-left: 4px solid var(--warning);
+}
+
+.survey-rec-card.low {
+  border-left: 4px solid #93a8a0;
+}
+
+.survey-rec-card.completed {
+  opacity: 0.75;
+  background: #f8fafa;
+}
+
+.survey-rec-card.completed .survey-rec-reason {
+  text-decoration: line-through;
+  color: #9aafaa;
+}
+
+.survey-rec-head {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  gap: 8px;
+  margin-bottom: 4px;
+}
+
+.survey-rec-tree {
+  font-weight: 750;
+  font-size: 15px;
+  color: var(--ink);
+}
+
+.survey-rec-tag {
+  flex-shrink: 0;
+  padding: 2px 8px;
+  border-radius: 999px;
+  font-size: 11px;
+  font-weight: 700;
+}
+
+.survey-rec-tag.high {
+  background: #ffecea;
+  color: var(--danger);
+}
+
+.survey-rec-tag.medium {
+  background: #fff2e7;
+  color: var(--warning);
+}
+
+.survey-rec-tag.low {
+  background: #edf2f0;
+  color: #606967;
+}
+
+.survey-rec-meta {
+  display: flex;
+  gap: 6px;
+  flex-wrap: wrap;
+  margin-bottom: 6px;
+}
+
+.survey-rec-chip {
+  padding: 2px 8px;
+  border-radius: 4px;
+  background: #f2f5f4;
+  font-size: 11px;
+  color: #606967;
+}
+
+.survey-rec-reason {
+  color: #26312d;
+  font-size: 13px;
+  line-height: 1.5;
+  margin-bottom: 6px;
+}
+
+.survey-rec-actions {
+  color: var(--muted);
+  font-size: 12px;
+  line-height: 1.45;
+  margin-bottom: 10px;
+  padding: 8px;
+  border-radius: 6px;
+  background: #f8fafa;
+}
+
+.survey-rec-actions strong {
+  color: var(--ink);
+}
+
+.survey-rec-btns {
+  display: flex;
+  gap: 8px;
+}
+
+.survey-rec-btn {
+  flex: 1;
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  gap: 6px;
+  min-height: 36px;
+  padding: 0 12px;
+  border-radius: 8px;
+  font-size: 13px;
+  font-weight: 700;
+  cursor: pointer;
+}
+
+.survey-rec-btn svg {
+  width: 16px;
+  height: 16px;
+}
+
+.survey-rec-btn.record {
+  border: 1px solid var(--green-800);
+  background: #fff;
+  color: var(--green-800);
+}
+
+.survey-rec-btn.record.completed {
+  background: var(--green-800);
+  color: #fff;
+}
+
+.survey-rec-btn.record.completed svg {
+  color: #fff;
+}
+
+.survey-rec-btn.skip {
+  border: 1px solid var(--line);
+  background: #fff;
+  color: var(--muted);
+}
+
+.survey-rec-btn.skip.skipped {
+  background: #edf0ef;
+  color: #606967;
+}
+
+/* 报告按钮 */
+.survey-report-section {
+  margin-bottom: 20px;
+}
+
+.survey-report-btn {
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  gap: 8px;
+  width: 100%;
+  min-height: 48px;
+  border: 0;
+  border-radius: 10px;
+  background: linear-gradient(135deg, var(--green-700), var(--green-900));
+  color: #fff;
+  font-size: 16px;
+  font-weight: 700;
+  box-shadow: 0 8px 18px rgba(15, 106, 69, 0.22);
+}
+
+.survey-report-btn svg {
+  width: 20px;
+  height: 20px;
+}
+
+/* 弹窗 */
+.survey-dialog {
+  width: min(94vw, 460px);
+  padding: 0;
+  border: 0;
+  border-radius: 12px;
+  background: #fff;
+  box-shadow: 0 24px 80px rgba(0,0,0,0.28);
+}
+
+.survey-dialog::backdrop {
+  background: rgba(5, 18, 13, 0.48);
+}
+
+.dialog-head {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  padding: 16px 16px 0;
+}
+
+.dialog-head h3 {
+  margin: 0;
+  font-size: 18px;
+}
+
+.survey-dialog-body {
+  padding: 16px;
+}
+
+.survey-dialog-hint {
+  margin: 0 0 12px;
+  color: var(--muted);
+  font-size: 13px;
+  line-height: 1.5;
+}
+
+.survey-dialog-examples {
+  margin: 0 0 14px;
+  padding: 10px;
+  border-radius: 8px;
+  background: #f5fbf8;
+  color: #35413d;
+  font-size: 13px;
+  line-height: 1.6;
+}
+
+.survey-obs-info {
+  margin-bottom: 14px;
+  padding: 10px;
+  border-radius: 8px;
+  background: #f5fbf8;
+  font-size: 13px;
+  line-height: 1.5;
+}
+
+.survey-obs-info strong {
+  color: var(--green-800);
+}
+
+.survey-field {
+  display: block;
+  margin-bottom: 12px;
+}
+
+.survey-field span {
+  display: block;
+  margin-bottom: 4px;
+  color: var(--muted);
+  font-size: 12px;
+  font-weight: 650;
+}
+
+.survey-field textarea,
+.survey-field select {
+  width: 100%;
+  min-height: 38px;
+  padding: 8px 10px;
+  border: 1px solid var(--line);
+  border-radius: 8px;
+  background: #fff;
+  color: var(--ink);
+  font-size: 14px;
+}
+
+.survey-field textarea:focus,
+.survey-field select:focus {
+  outline: none;
+  border-color: rgba(15, 106, 69, 0.5);
+  box-shadow: 0 0 0 3px rgba(15, 106, 69, 0.08);
+}
+
+.survey-field-row {
+  display: grid;
+  grid-template-columns: 1fr 1fr;
+  gap: 10px;
+}
+
+.survey-dialog-actions {
+  display: flex;
+  gap: 10px;
+  margin-top: 16px;
+}
+
+.survey-btn-primary {
+  flex: 1;
+  min-height: 44px;
+  border: 0;
+  border-radius: 8px;
+  background: var(--green-800);
+  color: #fff;
+  font-weight: 700;
+  font-size: 15px;
+  cursor: pointer;
+}
+
+.survey-btn-secondary {
+  min-height: 44px;
+  padding: 0 20px;
+  border: 1px solid var(--line);
+  border-radius: 8px;
+  background: #fff;
+  color: var(--muted);
+  font-weight: 650;
+  font-size: 15px;
+  cursor: pointer;
+}
+
+/* 调查报告显示 */
+.survey-report-view {
+  margin: 14px 0;
+  padding: 14px;
+  border: 1px solid var(--line);
+  border-radius: 8px;
+  background: #fafcfb;
+  font-size: 13px;
+  line-height: 1.6;
+  white-space: pre-wrap;
+  max-height: 60vh;
+  overflow-y: auto;
+}
+
+/* spinner 动画 */
+@keyframes spin {
+  from { transform: rotate(0deg); }
+  to { transform: rotate(360deg); }
+}
+
+.spin-icon {
+  animation: spin 1s linear infinite;
+  display: inline-block;
 }

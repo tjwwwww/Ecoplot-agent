@@ -160,6 +160,145 @@
         </section>
       </section>
 
+      <!-- ========= 野外调查视图 ========= -->
+      <section class="content-view" id="surveyView" aria-label="野外调查">
+        <!-- 调查首页 -->
+        <div id="surveyHome">
+          <div class="survey-hero">
+            <h2>🌲 野外调查</h2>
+            <p class="survey-hero-desc">AI 根据你的需求生成调查方案，现场逐条记录</p>
+            <button class="survey-new-btn" type="button" id="newSurveyBtn">
+              <i data-lucide="plus-circle"></i>
+              新建调查方案
+            </button>
+          </div>
+          <div class="survey-list-section">
+            <h3>已有方案</h3>
+            <div id="surveyList" class="survey-list">
+              <div class="survey-empty">暂无调查方案</div>
+            </div>
+          </div>
+        </div>
+
+        <!-- 调查方案详情 -->
+        <div id="surveyDetail" class="hidden">
+          <div class="survey-detail-head">
+            <button class="survey-back-btn" type="button" id="surveyBackBtn">
+              <i data-lucide="arrow-left"></i>
+            </button>
+            <div>
+              <h2 id="surveyDetailTitle">方案标题</h2>
+              <span class="survey-status-badge" id="surveyDetailStatus">进行中</span>
+            </div>
+          </div>
+
+          <div class="survey-progress-bar" id="surveyProgressBar">
+            <div class="survey-progress-fill" id="surveyProgressFill"></div>
+            <span class="survey-progress-text" id="surveyProgressText">0/0</span>
+          </div>
+
+          <div class="survey-ai-analysis" id="surveyAiAnalysis">
+            <details>
+              <summary>🤖 AI 分析</summary>
+              <p id="surveyAiAnalysisText"></p>
+            </details>
+          </div>
+
+          <div class="survey-rec-list" id="surveyRecList"></div>
+
+          <div class="survey-report-section">
+            <button class="survey-report-btn" type="button" id="surveyReportBtn">
+              <i data-lucide="file-text"></i>
+              生成调查报告
+            </button>
+          </div>
+        </div>
+
+        <!-- 调查记录弹窗 -->
+        <dialog class="survey-dialog" id="surveyObsDialog">
+          <div class="dialog-head">
+            <h3 id="surveyObsDialogTitle">记录观察</h3>
+            <button class="ghost-icon" type="button" id="surveyObsDialogClose" aria-label="关闭">
+              <i data-lucide="x"></i>
+            </button>
+          </div>
+          <div class="survey-dialog-body">
+            <div class="survey-obs-info" id="surveyObsInfo"></div>
+
+            <label class="survey-field">
+              <span>观察笔记</span>
+              <textarea id="surveyObsNotes" placeholder="写下你在现场观察到的现象…" rows="3"></textarea>
+            </label>
+
+            <div class="survey-field-row">
+              <label class="survey-field">
+                <span>健康状态</span>
+                <select id="surveyObsHealth">
+                  <option value="">-- 选择 --</option>
+                  <option value="good">良好</option>
+                  <option value="fair">一般</option>
+                  <option value="poor">较差</option>
+                  <option value="dead">枯死</option>
+                </select>
+              </label>
+              <label class="survey-field">
+                <span>病虫害</span>
+                <select id="surveyObsPest">
+                  <option value="">-- 选择 --</option>
+                  <option value="no">无</option>
+                  <option value="suspected">疑似</option>
+                  <option value="yes">有</option>
+                </select>
+              </label>
+            </div>
+
+            <div class="survey-field-row">
+              <label class="survey-field">
+                <span>物候期</span>
+                <select id="surveyObsPheno">
+                  <option value="">-- 选择 --</option>
+                  <option value="budding">萌芽</option>
+                  <option value="flowering">开花</option>
+                  <option value="fruiting">结果</option>
+                  <option value="leaf_changing">叶变色</option>
+                  <option value="dormant">休眠</option>
+                </select>
+              </label>
+            </div>
+
+            <div class="survey-dialog-actions">
+              <button class="survey-btn-secondary" type="button" id="surveyObsSkip">跳过</button>
+              <button class="survey-btn-primary" type="button" id="surveyObsSave">保存记录</button>
+            </div>
+          </div>
+        </dialog>
+
+        <!-- 新建调查方案弹窗 -->
+        <dialog class="survey-dialog" id="surveyNewDialog">
+          <div class="dialog-head">
+            <h3>新建调查方案</h3>
+            <button class="ghost-icon" type="button" id="surveyNewDialogClose" aria-label="关闭">
+              <i data-lucide="x"></i>
+            </button>
+          </div>
+          <div class="survey-dialog-body">
+            <p class="survey-dialog-hint">告诉我你想调查什么，AI 会根据数据库中的数据自动生成方案。</p>
+            <p class="survey-dialog-examples">例如：<br/>• "想去看看干旱对青海云杉的影响"<br/>• "最近病虫害比较严重，想去检查一下"<br/>• "帮我规划一次常规样地调查"</p>
+            <label class="survey-field">
+              <span>你的调查需求</span>
+              <textarea id="surveyNewRequest" placeholder="输入你的调查需求…" rows="3"></textarea>
+            </label>
+            <div class="survey-dialog-hint" id="surveyNewLoading" style="display:none;color:var(--green-800);">
+              <i data-lucide="loader-2" class="spin-icon"></i> AI 正在分析数据生成方案…
+            </div>
+            <div class="survey-dialog-actions">
+              <button class="survey-btn-secondary" type="button" id="surveyNewCancel">取消</button>
+              <button class="survey-btn-primary" type="button" id="surveyNewSubmit">生成方案</button>
+            </div>
+          </div>
+        </dialog>
+      </section>
+
       <form class="composer" id="composer" action="javascript:void(0)">
         <label class="input-wrap">
           <input id="queryInput" name="query" autocomplete="off" placeholder="输入问题或样方ID，例如 0101" />
@@ -181,9 +320,9 @@
           <i data-lucide="trees"></i>
           <span>样方</span>
         </button>
-        <button class="bottom-tab" type="button">
-          <i data-lucide="user-round"></i>
-          <span>我的</span>
+        <button class="bottom-tab" type="button" data-view="survey">
+          <i data-lucide="clipboard-check"></i>
+          <span>调查</span>
         </button>
       </nav>
     </main>
@@ -200,6 +339,6 @@
     </dialog>
 
     <script src="https://unpkg.com/lucide@latest/dist/umd/lucide.min.js"></script>
-    <script src="./app.js?v=20260716_8"></script>
+    <script src="./app.js?v=20260717_1"></script>
   </body>
 </html>

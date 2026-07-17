@@ -74,6 +74,7 @@ try:
         plot_tree_spatial_map,
         plot_subplot_percentile_profile,
         plot_climate_time_series,
+        create_generic_chart,
     )
     _FORESTRY_VIS_ENGINE_AVAILABLE = True
     _FORESTRY_VIS_ENGINE_IMPORT_ERROR = None
@@ -86,6 +87,7 @@ except Exception as e:
     plot_tree_spatial_map = None
     plot_subplot_percentile_profile = None
     plot_climate_time_series = None
+    create_generic_chart = None
     _FORESTRY_VIS_ENGINE_AVAILABLE = False
     _FORESTRY_VIS_ENGINE_IMPORT_ERROR = str(e)
 from formula_execution_engine import NeuroSymbolicFormulaEngine
@@ -165,6 +167,7 @@ def _connect_session_db() -> sqlite3.Connection:
         """
         CREATE TABLE IF NOT EXISTS agent_sessions (
             session_id TEXT PRIMARY KEY,
+            client_id TEXT,
             created_at TEXT,
             updated_at TEXT,
             title TEXT,
@@ -187,20 +190,29 @@ def _connect_session_db() -> sqlite3.Connection:
         )
         """
     )
+    session_columns = {row["name"] for row in conn.execute("PRAGMA table_info(agent_sessions)").fetchall()}
+    if "client_id" not in session_columns:
+        conn.execute("ALTER TABLE agent_sessions ADD COLUMN client_id TEXT")
     conn.commit()
     return conn
 
 
-def ensure_session(session_id: str) -> None:
+def ensure_session(session_id: str, client_id: Optional[str] = None) -> None:
     with _connect_session_db() as conn:
-        row = conn.execute("SELECT session_id FROM agent_sessions WHERE session_id=?", (session_id,)).fetchone()
+        row = conn.execute("SELECT session_id, client_id FROM agent_sessions WHERE session_id=?", (session_id,)).fetchone()
         if row is None:
             conn.execute(
-                "INSERT INTO agent_sessions(session_id, created_at, updated_at, title, last_focus_json) VALUES(?,?,?,?,?)",
-                (session_id, now_iso(), now_iso(), "ForestryAgent Chat", "{}"),
+                "INSERT INTO agent_sessions(session_id, client_id, created_at, updated_at, title, last_focus_json) VALUES(?,?,?,?,?,?)",
+                (session_id, client_id, now_iso(), now_iso(), "ForestryAgent Chat", "{}"),
             )
         else:
-            conn.execute("UPDATE agent_sessions SET updated_at=? WHERE session_id=?", (now_iso(), session_id))
+            if client_id and not row["client_id"]:
+                conn.execute(
+                    "UPDATE agent_sessions SET client_id=?, updated_at=? WHERE session_id=?",
+                    (client_id, now_iso(), session_id),
+                )
+            else:
+                conn.execute("UPDATE agent_sessions SET updated_at=? WHERE session_id=?", (now_iso(), session_id))
         conn.commit()
 
 
@@ -266,45 +278,52 @@ def save_message(
         conn.commit()
 
 
-def list_chat_sessions(limit: int = 50) -> List[Dict[str, Any]]:
+def list_chat_sessions(limit: int = 50, client_id: Optional[str] = None) -> List[Dict[str, Any]]:
     with _connect_session_db() as conn:
-        rows = conn.execute(
-            """
-            SELECT
-                s.session_id,
-                s.created_at,
-                s.updated_at,
-                s.title,
-                s.last_focus_json,
-                COUNT(m.message_id) AS message_count,
-                (
-                    SELECT m2.content
-                    FROM agent_messages m2
-                    WHERE m2.session_id = s.session_id AND m2.role = 'user'
-                    ORDER BY m2.created_at ASC
-                    LIMIT 1
-                ) AS first_user_message,
-                (
-                    SELECT m3.content
-                    FROM agent_messages m3
-                    WHERE m3.session_id = s.session_id AND m3.role = 'user'
-                    ORDER BY m3.created_at DESC
-                    LIMIT 1
-                ) AS last_user_message
-            FROM agent_sessions s
-            LEFT JOIN agent_messages m ON m.session_id = s.session_id
-            GROUP BY s.session_id
-            ORDER BY s.updated_at DESC
-            LIMIT ?
-            """,
-            (int(limit),),
-        ).fetchall()
+        sql = """
+        SELECT
+            s.session_id,
+            s.client_id,
+            s.created_at,
+            s.updated_at,
+            s.title,
+            s.last_focus_json,
+            COUNT(m.message_id) AS message_count,
+            (
+                SELECT m2.content
+                FROM agent_messages m2
+                WHERE m2.session_id = s.session_id AND m2.role = 'user'
+                ORDER BY m2.created_at ASC
+                LIMIT 1
+            ) AS first_user_message,
+            (
+                SELECT m3.content
+                FROM agent_messages m3
+                WHERE m3.session_id = s.session_id AND m3.role = 'user'
+                ORDER BY m3.created_at DESC
+                LIMIT 1
+            ) AS last_user_message
+        FROM agent_sessions s
+        LEFT JOIN agent_messages m ON m.session_id = s.session_id
+        """
+        params: List[Any] = []
+        if client_id:
+            sql += " WHERE s.client_id = ? "
+            params.append(client_id)
+        sql += """
+        GROUP BY s.session_id
+        ORDER BY s.updated_at DESC
+        LIMIT ?
+        """
+        params.append(int(limit))
+        rows = conn.execute(sql, tuple(params)).fetchall()
 
     sessions: List[Dict[str, Any]] = []
     for row in rows:
         title = (row["first_user_message"] or row["title"] or "新对话").strip()
         sessions.append({
             "session_id": row["session_id"],
+            "client_id": row["client_id"],
             "title": title[:40],
             "created_at": row["created_at"],
             "updated_at": row["updated_at"],
@@ -316,7 +335,6 @@ def list_chat_sessions(limit: int = 50) -> List[Dict[str, Any]]:
 
 
 def load_session_messages(session_id: str, limit: int = 200) -> List[Dict[str, Any]]:
-    ensure_session(session_id)
     with _connect_session_db() as conn:
         rows = conn.execute(
             """
@@ -344,7 +362,6 @@ def load_session_messages(session_id: str, limit: int = 200) -> List[Dict[str, A
 
 
 def load_last_user_turn(session_id: str) -> Optional[Dict[str, Any]]:
-    ensure_session(session_id)
     with _connect_session_db() as conn:
         row = conn.execute(
             """
@@ -668,6 +685,12 @@ def _rewrite_kg_query(cypher: str) -> Dict[str, Any]:
         't.crown_width_mean_m',
         't.crown_base_height_m',
         't.crown_length_m',
+        't.tree_x_m',
+        't.tree_y_m',
+        't.x_coordinate',
+        't.y_coordinate',
+        't.x_m',
+        't.y_m',
     ])
     has_obs = 'HAS_OBSERVATION' in rewritten or 'TreeObservation' in rewritten or 'obs.' in rewritten
     if needs_obs and not has_obs and 'RETURN' in rewritten:
@@ -684,6 +707,12 @@ def _rewrite_kg_query(cypher: str) -> Dict[str, Any]:
         ('t.crown_width_mean_m', 'coalesce(obs.crown_width_mean_m, t.crown_width_mean_m)'),
         ('t.crown_base_height_m', 'coalesce(obs.crown_base_height_m, t.crown_base_height_m)'),
         ('t.crown_length_m', 'CASE WHEN obs.tree_height_m IS NOT NULL AND obs.crown_base_height_m IS NOT NULL THEN obs.tree_height_m - obs.crown_base_height_m ELSE null END'),
+        ('t.tree_x_m', 'obs.tree_x_m'),
+        ('t.tree_y_m', 'obs.tree_y_m'),
+        ('t.x_coordinate', 'obs.tree_x_m'),
+        ('t.y_coordinate', 'obs.tree_y_m'),
+        ('t.x_m', 'obs.tree_x_m'),
+        ('t.y_m', 'obs.tree_y_m'),
     ]
     for token, replacement in field_rewrites:
         if token in rewritten:
@@ -838,7 +867,30 @@ NS_FORMULA_SCHEMA = [
 ]
 
 VISUALIZATION_TOOLS = [
-    
+    {
+        "type": "function",
+        "function": {
+            "name": "tool_create_chart",
+            "description": "通用基础制图工具：从树木、样方、逐年气候、逐月气候数据中按字段灵活生成 PNG 图。支持 scatter、bar、line、box、histogram、spatial；可用 filters_json 筛选，用 group_by/aggregate 聚合。默认只生成 PNG，只有 output_format=html/both 时生成交互 HTML。",
+            "parameters": {
+                "type": "object",
+                "properties": {
+                    "chart_type": {"type": "string", "description": "图类型：scatter、bar、line、box、histogram、spatial"},
+                    "data_source": {"type": "string", "description": "数据源：trees、subplots、climate_annual、climate_monthly"},
+                    "x": {"type": "string", "description": "X轴字段，如 tree_dbh_cm、tree_x_m、species、year、month"},
+                    "y": {"type": "string", "description": "Y轴字段，如 tree_height_m、tree_y_m、count、mean_dbh_cm、annual_precipitation_mm"},
+                    "color_by": {"type": "string", "description": "颜色分组字段，如 species、subplot_id，可选"},
+                    "size_by": {"type": "string", "description": "点大小字段，如 tree_dbh_cm，可选"},
+                    "group_by": {"type": "string", "description": "聚合分组字段，如 species、subplot_id，可选"},
+                    "aggregate": {"type": "string", "description": "聚合方式：none、count、mean、sum、min、max、median"},
+                    "filters_json": {"type": "string", "description": "JSON筛选条件，如 {\"subplot_id\":\"3014\",\"species\":\"青海云杉\"}"},
+                    "title": {"type": "string", "description": "图标题，可选；不填时系统会根据数据源、字段和筛选条件自动生成中文标题"},
+                    "output_format": {"type": "string", "description": "输出格式：png、html、both；默认 png"}
+                },
+                "required": ["chart_type", "data_source"]
+            }
+        }
+    },
     {
         "type": "function",
         "function": {
@@ -1046,6 +1098,27 @@ def _ensure_visualization_available(tool_name: str):
     if _FORESTRY_VIS_ENGINE_AVAILABLE:
         return None
     return _visualization_engine_error_response(tool_name)
+
+
+def _run_create_chart(args: dict) -> str:
+    error = _ensure_visualization_available("tool_create_chart")
+    if error:
+        return error
+    return _json_result(
+        create_generic_chart(
+            chart_type=args.get("chart_type", "scatter"),
+            data_source=args.get("data_source", "trees"),
+            x=args.get("x"),
+            y=args.get("y"),
+            color_by=args.get("color_by"),
+            size_by=args.get("size_by"),
+            group_by=args.get("group_by"),
+            aggregate=args.get("aggregate", "none"),
+            filters_json=args.get("filters_json", "{}"),
+            title=args.get("title"),
+            output_format=args.get("output_format", "png"),
+        )
+    )
 
 
 def _run_plot_subplot_grid_heatmap(args: dict) -> str:
@@ -1282,6 +1355,12 @@ def _build_tool_registry() -> dict:
             "category": "metrics",
         },
 
+        "tool_create_chart": {
+            "handler": _run_create_chart,
+            "enabled": True,
+            "schema": schema_map["tool_create_chart"],
+            "category": "visualization",
+        },
         "tool_plot_subplot_grid_heatmap": {
             "handler": _run_plot_subplot_grid_heatmap,
             "enabled": True,
@@ -1721,13 +1800,14 @@ def _run_react_chat(question: str, context: Dict[str, Any], history: List[Dict[s
 def run_agent_chat(
     question: str,
     session_id: Optional[str] = None,
+    client_id: Optional[str] = None,
     context: Optional[Dict[str, Any]] = None,
     options: Optional[Dict[str, Any]] = None,
     event_callback: EventCallback = None,
 ) -> Dict[str, Any]:
     question = str(question or "").strip()
     session_id = session_id or create_session_id()
-    ensure_session(session_id)
+    ensure_session(session_id, client_id=client_id)
     options = dict(options or {})
     context = _normalize_context(context, question)
     history = load_recent_messages(session_id, limit=int(options.get("history_limit", 12)))
@@ -1739,6 +1819,7 @@ def run_agent_chat(
         answer = "请先输入问题。"
         result = {
             "session_id": session_id,
+        "client_id": client_id,
             "answer_type": "chat_answer",
             "answer": answer,
             "used_tools": [],
@@ -1814,13 +1895,14 @@ def run_agent_chat(
 def run_agent_report(
     question: str,
     session_id: Optional[str] = None,
+    client_id: Optional[str] = None,
     context: Optional[Dict[str, Any]] = None,
     options: Optional[Dict[str, Any]] = None,
 ) -> Dict[str, Any]:
     q = str(question or "").strip()
     if not _contains_any(q.lower(), ["报告", "汇报", "文档", "导出"]):
         q = "请生成一份结构化中文报告：" + q
-    result = run_agent_chat(q, session_id=session_id, context=context, options=options)
+    result = run_agent_chat(q, session_id=session_id, client_id=client_id, context=context, options=options)
     result["answer_type"] = "report"
     return result
 

@@ -13,6 +13,44 @@ variables:
   level: tree
   source_class: TreeObservation
   property_key: tree_height_m
+- variable_id: VAR_TREE_X
+  name_cn: 单木平面X坐标
+  label: RawMeasuredVariable
+  canonical_unit: m
+  level: tree
+  source_class: TreeObservation
+  property_key: tree_x_m
+  storage:
+    sqlite_table: tree_observations
+    sqlite_column: tree_x_m
+    kg_label: TreeObservation
+    kg_property: tree_x_m
+    kg_access_path: "(:TreeIndividual)-[:HAS_OBSERVATION]->(:TreeObservation)"
+  aliases:
+    - x
+    - x_m
+    - X坐标
+    - 树木X坐标
+  definition: 单木调查记录中的米制平面X坐标，属于观测记录字段；不要映射到 TreeIndividual.x_coordinate。
+- variable_id: VAR_TREE_Y
+  name_cn: 单木平面Y坐标
+  label: RawMeasuredVariable
+  canonical_unit: m
+  level: tree
+  source_class: TreeObservation
+  property_key: tree_y_m
+  storage:
+    sqlite_table: tree_observations
+    sqlite_column: tree_y_m
+    kg_label: TreeObservation
+    kg_property: tree_y_m
+    kg_access_path: "(:TreeIndividual)-[:HAS_OBSERVATION]->(:TreeObservation)"
+  aliases:
+    - y
+    - y_m
+    - Y坐标
+    - 树木Y坐标
+  definition: 单木调查记录中的米制平面Y坐标，属于观测记录字段；不要映射到 TreeIndividual.y_coordinate。
 - variable_id: VAR_CROWN_WIDTH_EW
   name_cn: 东西向冠幅 W_EW
   label: RawMeasuredVariable
