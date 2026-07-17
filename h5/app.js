@@ -34,20 +34,6 @@ const DEMO_CHAT_HISTORY = [
     assistantText: "0316 样方返回数据中有 3 株倒木和 1 株断头木。建议在样方图中查看对应点位，并进入样木清单核对具体编号。",
     time: "2026-07-16T09:00:00.000Z",
   },
-  {
-    id: 102,
-    title: "0101 样方树种结构",
-    userText: "0101 主要是什么树种？",
-    assistantText: "0101 样方已加载，主要树种可在样方图图例中查看。当前图例按树种固定颜色展示，点击树点可查看编号和健康状态。",
-    time: "2026-07-16T08:35:00.000Z",
-  },
-  {
-    id: 103,
-    title: "健康状态复核建议",
-    userText: "倒木和断头木要怎么复核？",
-    assistantText: "建议优先核对树木编号、空间位置、胸径和树高记录，现场确认倒伏方向、断头高度以及是否影响周边样木。",
-    time: "2026-07-16T08:10:00.000Z",
-  },
 ];
 
 const sampleStore = new Map();
@@ -146,6 +132,22 @@ const dom = {
   surveyNewCancel: document.querySelector("#surveyNewCancel"),
   surveyNewSubmit: document.querySelector("#surveyNewSubmit"),
 };
+
+function getOrCreateClientId() {
+  const storageKey = "forestry_agent_client_id";
+  let clientId = localStorage.getItem(storageKey);
+
+  if (!clientId) {
+    if (window.crypto && crypto.randomUUID) {
+      clientId = crypto.randomUUID();
+    } else {
+      clientId = `client_${Date.now()}_${Math.random().toString(16).slice(2)}`;
+    }
+    localStorage.setItem(storageKey, clientId);
+  }
+
+  return clientId;
+}
 
 function apiUrl(subplotId) {
   const params = new URLSearchParams({
