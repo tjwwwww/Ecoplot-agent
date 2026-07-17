@@ -1,4 +1,4 @@
-# -*- coding: utf-8 -*-
+﻿# -*- coding: utf-8 -*-
 """
 api.py
 ======
@@ -244,7 +244,7 @@ class AgentChatRequest(BaseModel):
     question: str = Field(..., min_length=1)
     context: Optional[AgentPageContext] = None
 
-    # 新版本体驱动 agent2.py 需要 session_id 支持连续对话
+    client_id: Optional[str] = None
     session_id: Optional[str] = None
 
     # chat: 自然对话；report: 报告模式
