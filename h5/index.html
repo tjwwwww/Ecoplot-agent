@@ -106,6 +106,33 @@
 
           <div class="selected-tree-summary" id="selectedTreeSummary"></div>
 
+          <div class="nav-panel hidden" id="navPanel">
+            <div class="nav-head">
+              <span>🌲 树木导航</span>
+              <button class="ghost-icon" type="button" id="navClose" aria-label="关闭导航">
+                <i data-lucide="x"></i>
+              </button>
+            </div>
+            <div class="nav-form">
+              <div class="nav-field-row">
+                <div class="nav-field">
+                  <label>起点树编号</label>
+                  <input id="navFrom" placeholder="例如 T001" />
+                </div>
+                <div class="nav-field">
+                  <label>终点树编号</label>
+                  <input id="navTo" placeholder="例如 T002" />
+                </div>
+              </div>
+              <button type="button" id="navPlanButton">规划路线</button>
+            </div>
+            <div class="nav-info hidden" id="navInfo">
+              <div class="nav-info-head" id="navInfoHead"></div>
+              <div class="nav-info-detail" id="navInfoDetail"></div>
+              <div class="nav-waypoints" id="navWaypoints"></div>
+            </div>
+          </div>
+
           <div class="species-legend" id="speciesLegend" aria-label="树种颜色图例"></div>
 
           <div class="card-actions">
@@ -116,6 +143,14 @@
             <button type="button" id="listButton">
               <i data-lucide="list"></i>
               查看样木清单
+            </button>
+            <button type="button" id="toggleLabelsButton">
+              <i data-lucide="tags"></i>
+              显示编号
+            </button>
+            <button type="button" id="navButton">
+              <i data-lucide="navigation"></i>
+              导航
             </button>
           </div>
         </section>
@@ -166,12 +201,16 @@
         <!-- 调查首页 -->
         <div id="surveyHome">
           <div class="survey-hero">
-            <h2>🌲 野外调查</h2>
-            <p class="survey-hero-desc">AI 根据你的需求生成调查方案，现场逐条记录</p>
+            <h2>🌲 智能调查规划</h2>
+            <p class="survey-hero-desc">AI 先分析样地数据，再根据你的需求定制调查方案，人只需要做判断和记录</p>
             <button class="survey-new-btn" type="button" id="newSurveyBtn">
               <i data-lucide="plus-circle"></i>
               新建调查方案
             </button>
+          </div>
+          <div class="survey-site-brief" id="surveySiteBrief">
+            <div class="survey-site-brief-title">样地认知摘要</div>
+            <div class="survey-site-brief-body" id="surveySiteBriefBody">正在分析样地数据...</div>
           </div>
           <div class="survey-list-section">
             <h3>已有方案</h3>
@@ -206,6 +245,24 @@
           </div>
 
           <div class="survey-rec-list" id="surveyRecList"></div>
+
+          <!-- 智能体咨询区（嵌入方案详情页） -->
+          <div class="survey-inline-chat" id="surveyInlineChat">
+            <div class="survey-chat-head">
+              <i data-lucide="bot"></i>
+              <span>问智能体</span>
+              <span class="survey-chat-context" id="surveyChatContext">针对方案提问</span>
+            </div>
+            <div class="survey-chat-messages" id="surveyChatMessages">
+              <div class="survey-chat-placeholder">输入问题，AI 会结合数据和你的方案针对性回答</div>
+            </div>
+            <form class="survey-chat-composer" id="surveyChatComposer" action="javascript:void(0)">
+              <input id="surveyChatInput" placeholder="例如：帮我详细说说怎么查0316的倒木..." />
+              <button type="submit" aria-label="发送">
+                <i data-lucide="send"></i>
+              </button>
+            </form>
+          </div>
 
           <div class="survey-report-section">
             <button class="survey-report-btn" type="button" id="surveyReportBtn">
@@ -283,11 +340,11 @@
             </button>
           </div>
           <div class="survey-dialog-body">
-            <p class="survey-dialog-hint">告诉我你想调查什么，AI 会根据数据库中的数据自动生成方案。</p>
-            <p class="survey-dialog-examples">例如：<br/>• "想去看看干旱对青海云杉的影响"<br/>• "最近病虫害比较严重，想去检查一下"<br/>• "帮我规划一次常规样地调查"</p>
+            <p class="survey-dialog-hint">告诉我你想调查什么，AI 会先分析样地数据，再结合你的需求生成合理的调查方案。</p>
+            <p class="survey-dialog-examples">例如：<br/>• "我想去 0101 样方看看那些不正常的树"<br/>• "只有两个人，三小时，重点看青海云杉的健康状况"<br/>• "帮我规划一次常规样地调查，我需要对比不同树种"</p>
             <label class="survey-field">
-              <span>你的调查需求</span>
-              <textarea id="surveyNewRequest" placeholder="输入你的调查需求…" rows="3"></textarea>
+              <span>你的调查目标</span>
+              <textarea id="surveyNewRequest" placeholder="例如：我想去 0101 样方，主要看那些健康异常的树，顺便了解一下整体林分结构..." rows="3"></textarea>
             </label>
             <div class="survey-dialog-hint" id="surveyNewLoading" style="display:none;color:var(--green-800);">
               <i data-lucide="loader-2" class="spin-icon"></i> AI 正在分析数据生成方案…
