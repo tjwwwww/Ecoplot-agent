@@ -39,6 +39,10 @@ const DEMO_CHAT_HISTORY = [
 const sampleStore = new Map();
 let activeSampleId = DEFAULT_SUBPLOT_ID;
 let selectedTreeId = "";
+let showTreeLabels = false;
+let navFromId = "";
+let navToId = "";
+let navPath = null; // {fromTree, toTree, distance, bearing, direction, waypoints[]}
 let enabledSpecies = new Set();
 let currentClientId = getOrCreateClientId();
 let currentSessionId = getSavedChatState().sessionId || createSessionId();
@@ -104,6 +108,8 @@ const dom = {
   surveyHome: document.querySelector("#surveyHome"),
   surveyDetail: document.querySelector("#surveyDetail"),
   surveyList: document.querySelector("#surveyList"),
+  surveySiteBrief: document.querySelector("#surveySiteBrief"),
+  surveySiteBriefBody: document.querySelector("#surveySiteBriefBody"),
   newSurveyBtn: document.querySelector("#newSurveyBtn"),
   surveyBackBtn: document.querySelector("#surveyBackBtn"),
   surveyDetailTitle: document.querySelector("#surveyDetailTitle"),
@@ -115,6 +121,13 @@ const dom = {
   surveyAiAnalysisText: document.querySelector("#surveyAiAnalysisText"),
   surveyRecList: document.querySelector("#surveyRecList"),
   surveyReportBtn: document.querySelector("#surveyReportBtn"),
+  surveyRevisePanel: null,
+  surveyReviseInput: null,
+  surveyReviseSubmit: null,
+  surveyChatBtn: document.querySelector("#surveyChatBtn"),
+  surveyChatMessages: document.querySelector("#surveyChatMessages"),
+  surveyChatInput: document.querySelector("#surveyChatInput"),
+  surveyChatComposer: document.querySelector("#surveyChatComposer"),
   surveyObsDialog: document.querySelector("#surveyObsDialog"),
   surveyObsDialogTitle: document.querySelector("#surveyObsDialogTitle"),
   surveyObsDialogClose: document.querySelector("#surveyObsDialogClose"),
@@ -131,6 +144,17 @@ const dom = {
   surveyNewLoading: document.querySelector("#surveyNewLoading"),
   surveyNewCancel: document.querySelector("#surveyNewCancel"),
   surveyNewSubmit: document.querySelector("#surveyNewSubmit"),
+  toggleLabelsButton: document.querySelector("#toggleLabelsButton"),
+  navButton: document.querySelector("#navButton"),
+  navPanel: document.querySelector("#navPanel"),
+  navClose: document.querySelector("#navClose"),
+  navFrom: document.querySelector("#navFrom"),
+  navTo: document.querySelector("#navTo"),
+  navPlanButton: document.querySelector("#navPlanButton"),
+  navInfo: document.querySelector("#navInfo"),
+  navInfoHead: document.querySelector("#navInfoHead"),
+  navInfoDetail: document.querySelector("#navInfoDetail"),
+  navWaypoints: document.querySelector("#navWaypoints"),
 };
 
 function getOrCreateClientId() {
@@ -322,6 +346,7 @@ function renderAll() {
   drawPlot(dom.plotCanvas, sample, getVisibleTrees(sample), selectedTreeId);
   drawPlot(dom.largePlotCanvas, sample, getVisibleTrees(sample), selectedTreeId);
   renderIcons();
+  updateLabelButtonStyle();
 }
 
 function metricTemplate(type, icon, label) {
@@ -501,6 +526,134 @@ function drawPlot(canvas, sample, trees, activeTreeId) {
   if (activeTree) {
     drawActiveLabel(ctx, activeTree, layout);
   }
+
+  if (showTreeLabels) {
+    drawTreeLabels(ctx, trees, layout);
+  }
+
+  if (navPath && navPath.fromTree && navPath.toTree) {
+    drawNavigationPath(ctx, trees, layout, navPath, activeTreeId);
+  }
+}
+
+function drawTreeLabels(ctx, trees, layout) {
+  ctx.save();
+  const drawnPositions = [];
+  trees.forEach((tree) => {
+    const point = treePoint(tree, layout);
+    if (!point) return;
+    const label = tree.id;
+    ctx.font = "bold 10px -apple-system, BlinkMacSystemFont, sans-serif";
+    const textWidth = ctx.measureText(label).width;
+    const labelX = point.x;
+    const labelY = point.y - 8;
+    let offsetY = 0;
+    for (const pos of drawnPositions) {
+      if (Math.abs(pos.x - labelX) < textWidth + 8 && Math.abs(pos.y - labelY) < 14) {
+        offsetY = -14;
+        break;
+      }
+    }
+    const finalY = labelY + offsetY;
+    ctx.fillStyle = "rgba(255,255,255,0.9)";
+    roundRect(ctx, labelX - textWidth / 2 - 4, finalY - 12, textWidth + 8, 14, 3);
+    ctx.fill();
+    ctx.strokeStyle = "rgba(0,0,0,0.12)";
+    ctx.lineWidth = 0.5;
+    ctx.stroke();
+    ctx.fillStyle = "#161b19";
+    ctx.textAlign = "center";
+    ctx.textBaseline = "bottom";
+    ctx.fillText(label, labelX, finalY);
+    drawnPositions.push({ x: labelX, y: finalY });
+  });
+  ctx.restore();
+}
+
+function drawNavigationPath(ctx, trees, layout, path, activeTreeId) {
+  const fromPoint = treePoint(path.fromTree, layout);
+  const toPoint = treePoint(path.toTree, layout);
+  if (!fromPoint || !toPoint) return;
+
+  ctx.save();
+  ctx.beginPath();
+  ctx.moveTo(fromPoint.x, fromPoint.y);
+  ctx.lineTo(toPoint.x, toPoint.y);
+  ctx.strokeStyle = "#db2c24";
+  ctx.lineWidth = 2.5;
+  ctx.setLineDash([8, 4]);
+  ctx.stroke();
+
+  const angle = Math.atan2(toPoint.y - fromPoint.y, toPoint.x - fromPoint.x);
+  const arrowLen = 10;
+  ctx.setLineDash([]);
+  ctx.fillStyle = "#db2c24";
+  ctx.beginPath();
+  ctx.moveTo(toPoint.x, toPoint.y);
+  ctx.lineTo(toPoint.x - arrowLen * Math.cos(angle - 0.4), toPoint.y - arrowLen * Math.sin(angle - 0.4));
+  ctx.lineTo(toPoint.x - arrowLen * Math.cos(angle + 0.4), toPoint.y - arrowLen * Math.sin(angle + 0.4));
+  ctx.closePath();
+  ctx.fill();
+
+  ctx.beginPath();
+  ctx.fillStyle = "#db2c24";
+  ctx.arc(toPoint.x, toPoint.y, 7, 0, Math.PI * 2);
+  ctx.fill();
+  ctx.fillStyle = "#fff";
+  ctx.font = "bold 11px -apple-system, BlinkMacSystemFont, sans-serif";
+  ctx.textAlign = "center";
+  ctx.textBaseline = "middle";
+  ctx.fillText("终", toPoint.x, toPoint.y);
+
+  ctx.beginPath();
+  ctx.fillStyle = "#147d44";
+  ctx.arc(fromPoint.x, fromPoint.y, 7, 0, Math.PI * 2);
+  ctx.fill();
+  ctx.fillStyle = "#fff";
+  ctx.fillText("起", fromPoint.x, fromPoint.y);
+
+  if (path.waypoints && path.waypoints.length) {
+    path.waypoints.forEach((wp) => {
+      const wpPoint = treePoint(wp, layout);
+      if (!wpPoint) return;
+      ctx.beginPath();
+      ctx.fillStyle = "rgba(219,44,36,0.35)";
+      ctx.arc(wpPoint.x, wpPoint.y, 5, 0, Math.PI * 2);
+      ctx.fill();
+      if (wp.id !== activeTreeId) {
+        ctx.fillStyle = "rgba(255,255,255,0.85)";
+        ctx.font = "10px -apple-system, BlinkMacSystemFont, sans-serif";
+        const wpLabel = wp.id;
+        const wpW = ctx.measureText(wpLabel).width;
+        roundRect(ctx, wpPoint.x - wpW / 2 - 3, wpPoint.y - 24, wpW + 6, 14, 3);
+        ctx.fill();
+        ctx.fillStyle = "#35413d";
+        ctx.textAlign = "center";
+        ctx.textBaseline = "bottom";
+        ctx.fillText(wpLabel, wpPoint.x, wpPoint.y - 12);
+      }
+    });
+  }
+
+  if (path.distance !== undefined) {
+    const midX = (fromPoint.x + toPoint.x) / 2;
+    const midY = (fromPoint.y + toPoint.y) / 2;
+    const distLabel = `距离 ${path.distance.toFixed(1)}m  · 方向 ${path.direction || "—"}`;
+    ctx.font = "bold 11px -apple-system, BlinkMacSystemFont, sans-serif";
+    const distW = ctx.measureText(distLabel).width;
+    ctx.fillStyle = "rgba(255,255,255,0.92)";
+    roundRect(ctx, midX - distW / 2 - 6, midY - 10, distW + 12, 20, 4);
+    ctx.fill();
+    ctx.strokeStyle = "rgba(219,44,36,0.3)";
+    ctx.lineWidth = 1;
+    ctx.stroke();
+    ctx.fillStyle = "#db2c24";
+    ctx.textAlign = "center";
+    ctx.textBaseline = "middle";
+    ctx.fillText(distLabel, midX, midY);
+  }
+
+  ctx.restore();
 }
 
 function drawGrid(ctx, padding, plotWidth, plotHeight, xRange, yRange) {
@@ -628,6 +781,165 @@ function roundRect(ctx, x, y, width, height, radius) {
   ctx.closePath();
 }
 
+// =========================================================================
+// 显示编号 & 树木导航
+// =========================================================================
+
+function updateLabelButtonStyle() {
+  if (!dom.toggleLabelsButton) return;
+  dom.toggleLabelsButton.classList.toggle("active-toggle", showTreeLabels);
+  dom.toggleLabelsButton.innerHTML = `<i data-lucide="tags"></i>${showTreeLabels ? "隐藏编号" : "显示编号"}`;
+  if (window.lucide) lucide.createIcons();
+}
+
+function resetNavigation() {
+  navFromId = "";
+  navToId = "";
+  navPath = null;
+  if (dom.navInfo) dom.navInfo.classList.add("hidden");
+  if (dom.navPanel) {
+    dom.navPanel.classList.add("hidden");
+  }
+}
+
+function planNavigation() {
+  const sample = getSample();
+  if (!sample) {
+    alert("请先加载样方数据");
+    return;
+  }
+
+  const fromId = (dom.navFrom.value || "").trim().toUpperCase();
+  const toId = (dom.navTo.value || "").trim().toUpperCase();
+
+  if (!fromId || !toId) {
+    alert("请输入起点和终点树木编号");
+    return;
+  }
+
+  const fromTree = sample.trees.find((t) => t.id.toUpperCase() === fromId);
+  const toTree = sample.trees.find((t) => t.id.toUpperCase() === toId);
+
+  if (!fromTree) {
+    alert(`未找到起点树"${fromId}"，请检查编号`);
+    return;
+  }
+  if (!toTree) {
+    alert(`未找到终点树"${toId}"，请检查编号`);
+    return;
+  }
+  if (fromId === toId) {
+    alert("起点和终点是同一棵树，无需导航");
+    return;
+  }
+
+  navFromId = fromTree.id;
+  navToId = toTree.id;
+
+  // 计算距离和方向
+  const dx = toTree.x - fromTree.x;
+  const dy = toTree.y - fromTree.y;
+  const distance = Math.sqrt(dx * dx + dy * dy);
+  const bearing = (Math.atan2(dx, dy) * 180 / Math.PI + 360) % 360;
+  const direction = bearingToDirection(bearing);
+
+  // 查找途经点（路径附近的树木作为参考路标）
+  const waypoints = findWaypoints(sample.trees, fromTree, toTree, distance);
+
+  navPath = {
+    fromTree,
+    toTree,
+    distance: round1(distance),
+    bearing: Math.round(bearing),
+    direction,
+    waypoints,
+  };
+
+  // 更新导航信息面板
+  renderNavInfo(navPath);
+
+  // 重绘
+  drawPlot(dom.plotCanvas, sample, getVisibleTrees(), selectedTreeId);
+  if (dom.plotDialog.open) drawPlot(dom.largePlotCanvas, sample, getVisibleTrees(), selectedTreeId);
+
+  // 选中终点树
+  selectTreeOnPlot(toTree);
+}
+
+function bearingToDirection(bearing) {
+  const dirs = ["北", "北东北", "东北", "东东北", "东", "东东南", "东南", "南东南",
+                "南", "南西南", "西南", "西西南", "西", "西西北", "西北", "北西北"];
+  const index = Math.round(bearing / 22.5) % 16;
+  return dirs[index];
+}
+
+function findWaypoints(trees, fromTree, toTree, totalDist) {
+  if (totalDist < 5) return [];
+  const dx = toTree.x - fromTree.x;
+  const dy = toTree.y - fromTree.y;
+  const threshold = Math.max(totalDist * 0.06, 1.5);
+
+  const candidates = trees
+    .filter((t) => t.id !== fromTree.id && t.id !== toTree.id)
+    .map((t) => {
+      const px = t.x - fromTree.x;
+      const py = t.y - fromTree.y;
+      const proj = (px * dx + py * dy) / (dx * dx + dy * dy);
+      if (proj < 0.1 || proj > 0.9) return null;
+      const perpDist = Math.abs(px - proj * dx);
+      if (perpDist > threshold) return null;
+      return { tree: t, proj, perpDist };
+    })
+    .filter(Boolean)
+    .sort((a, b) => a.proj - b.proj)
+    .slice(0, 5)
+    .map((item) => item.tree);
+
+  return candidates;
+}
+
+function renderNavInfo(path) {
+  if (!dom.navInfo) return;
+  dom.navInfo.classList.remove("hidden");
+
+  const fromLabel = `${path.fromTree.id} · ${path.fromTree.species}`;
+  const toLabel = `${path.toTree.id} · ${path.toTree.species}`;
+
+  dom.navInfoHead.innerHTML = `
+    <span class="nav-info-distance">${path.distance.toFixed(1)}m</span>
+    <span class="nav-info-direction">↗ ${path.direction} ${path.bearing}°</span>
+  `;
+
+  dom.navInfoDetail.innerHTML = `
+    <div><strong>起点：</strong>${escapeHtml(fromLabel)}</div>
+    <div><strong>终点：</strong>${escapeHtml(toLabel)}</div>
+    <div style="margin-top:4px;color:var(--muted);font-size:12px;">
+      方位角 ${path.bearing}°（${path.direction}），直线距离 ${path.distance.toFixed(1)}m
+    </div>
+  `;
+
+  // 途经点
+  if (path.waypoints && path.waypoints.length) {
+    let wpHtml = '<div style="margin-top:6px;font-weight:650;font-size:12px;color:var(--muted);">沿途参考标记：</div>';
+    wpHtml += path.waypoints.map((wp, i) => {
+      const wpDx = wp.x - path.fromTree.x;
+      const wpDy = wp.y - path.fromTree.y;
+      const wpDist = Math.sqrt(wpDx * wpDx + wpDy * wpDy);
+      return `
+        <div class="nav-waypoint-item">
+          <span class="wp-label">${escapeHtml(wp.id)}</span>
+          <span class="wp-detail">${escapeHtml(wp.species)} · 距起点 ${wpDist.toFixed(1)}m</span>
+        </div>
+      `;
+    }).join("");
+    dom.navWaypoints.innerHTML = wpHtml;
+  } else {
+    dom.navWaypoints.innerHTML = "";
+  }
+
+  if (window.lucide) lucide.createIcons();
+}
+
 function switchView(view) {
   const isChat = view === "chat";
   const isMap = view === "map";
@@ -645,6 +957,8 @@ function switchView(view) {
       drawPlot(dom.plotCanvas, getSample(), getVisibleTrees(), selectedTreeId);
     }
     if (isSurvey) {
+      loadSurveySiteBrief();
+      ensureSurveyPlanningChatPanel();
       loadSurveyList();
     }
   });
@@ -661,6 +975,7 @@ async function selectSample(subplotId) {
     activeSampleId = normalizedId;
     selectedTreeId = sample.trees[0]?.id || "";
     enabledSpecies = new Set(uniqueSpecies(sample));
+    resetNavigation();
     renderAll();
     showPlotPanel();
     setLoading(false, `已加载样方 ${normalizedId}，共 ${sample.trees.length} 株单木。`);
@@ -1669,6 +1984,48 @@ function bindEvents() {
   });
   addClickListener(dom.closeDialog, () => dom.plotDialog.close());
 
+  // 显示编号按钮
+  addClickListener(dom.toggleLabelsButton, () => {
+    showTreeLabels = !showTreeLabels;
+    updateLabelButtonStyle();
+    const sample = getSample();
+    if (sample) {
+      drawPlot(dom.plotCanvas, sample, getVisibleTrees(), selectedTreeId);
+      if (dom.plotDialog.open) drawPlot(dom.largePlotCanvas, sample, getVisibleTrees(), selectedTreeId);
+    }
+  });
+
+  // 导航切换
+  addClickListener(dom.navButton, () => {
+    const isVisible = !dom.navPanel.classList.contains("hidden");
+    dom.navPanel.classList.toggle("hidden", isVisible);
+    if (!isVisible) {
+      dom.navFrom.value = navFromId || "";
+      dom.navTo.value = navToId || "";
+      dom.navFrom.focus();
+    }
+  });
+
+  addClickListener(dom.navClose, () => {
+    dom.navPanel.classList.add("hidden");
+    resetNavigation();
+    const sample = getSample();
+    if (sample) {
+      drawPlot(dom.plotCanvas, sample, getVisibleTrees(), selectedTreeId);
+      if (dom.plotDialog.open) drawPlot(dom.largePlotCanvas, sample, getVisibleTrees(), selectedTreeId);
+    }
+  });
+
+  // 规划路线
+  addClickListener(dom.navPlanButton, planNavigation);
+
+  // 回车触发规划
+  if (dom.navTo) {
+    dom.navTo.addEventListener("keydown", (e) => {
+      if (e.key === "Enter") planNavigation();
+    });
+  }
+
   window.addEventListener("resize", () => {
     if (!getSample()) return;
     drawPlot(dom.plotCanvas, getSample(), getVisibleTrees(), selectedTreeId);
@@ -1685,18 +2042,327 @@ function bindEvents() {
 
 let currentPlanId = null;
 let currentRecId = null;
+let currentObservationId = null;
+let currentSurveyRecommendations = [];
+let currentSurveyPlan = null;
+let surveyPlanningSessionId = null;
+let surveyPlanningMessages = [];
+let surveyDetailChatSessionId = null;
+let surveyDetailChatMessages = [];
+
+
+function ensureSurveyRevisePanel() {
+  if (dom.surveyRevisePanel || !dom.surveyRecList) return;
+  const panel = document.createElement("div");
+  panel.className = "survey-inline-chat survey-revise-panel";
+  panel.innerHTML = `
+    <div class="survey-chat-head">
+      <i data-lucide="wand-2"></i>
+      <span>\u4fee\u6539\u65b9\u6848</span>
+      <span class="survey-chat-context">\u7528\u81ea\u7136\u8bed\u8a00\u8c03\u6574\u4efb\u52a1\u6e05\u5355</span>
+    </div>
+    <form class="survey-chat-composer" id="surveyReviseComposer" action="javascript:void(0)">
+      <input id="surveyReviseInput" placeholder="\u4f8b\u5982\uff1a\u7f29\u51cf\u523010\u68f5\uff0c\u53ea\u4fdd\u7559\u9752\u6d77\u4e91\u6749" />
+      <button type="submit" id="surveyReviseSubmit" aria-label="\u4fee\u6539\u65b9\u6848">
+        <i data-lucide="send"></i>
+      </button>
+    </form>
+  `;
+  dom.surveyRecList.insertAdjacentElement("beforebegin", panel);
+  dom.surveyRevisePanel = panel;
+  dom.surveyReviseInput = panel.querySelector("#surveyReviseInput");
+  dom.surveyReviseSubmit = panel.querySelector("#surveyReviseSubmit");
+  const form = panel.querySelector("#surveyReviseComposer");
+  form.addEventListener("submit", reviseCurrentSurveyPlan);
+  renderIcons();
+}
+
+async function reviseCurrentSurveyPlan() {
+  if (!currentPlanId || !dom.surveyReviseInput) return;
+  const instruction = dom.surveyReviseInput.value.trim();
+  if (!instruction) return;
+  const button = dom.surveyReviseSubmit;
+  if (button) button.disabled = true;
+  try {
+    const resp = await fetch(`/api/survey/plans/${currentPlanId}/revise`, {
+      method: "POST",
+      headers: { "Content-Type": "application/json" },
+      body: JSON.stringify({ instruction }),
+    });
+    const data = await resp.json();
+    if (data.status === "success" && data.plan) {
+      dom.surveyReviseInput.value = "";
+      openSurveyPlan(data.plan.plan_id);
+      loadSurveyList();
+    } else {
+      alert("\u4fee\u6539\u65b9\u6848\u5931\u8d25: " + (data.message || data.detail || "unknown error"));
+    }
+  } catch (err) {
+    alert("\u7f51\u7edc\u9519\u8bef: " + err.message);
+  } finally {
+    if (button) button.disabled = false;
+  }
+}
+
+
+
+async function loadSurveySiteBrief() {
+  if (!dom.surveySiteBriefBody) return;
+  dom.surveySiteBriefBody.innerHTML = "\u6b63\u5728\u5206\u6790\u6837\u5730\u6570\u636e...";
+  try {
+    const resp = await fetch("/api/survey/site-brief");
+    const data = await resp.json();
+    if (data.status !== "success" || !data.brief) {
+      dom.surveySiteBriefBody.textContent = "\u6837\u5730\u6458\u8981\u6682\u65f6\u4e0d\u53ef\u7528";
+      return;
+    }
+    renderSurveySiteBrief(data.brief);
+  } catch (err) {
+    dom.surveySiteBriefBody.textContent = "\u6837\u5730\u6458\u8981\u52a0\u8f7d\u5931\u8d25\uff1a" + err.message;
+  }
+}
+
+function renderSurveySiteBrief(brief) {
+  const snapshot = brief.data_snapshot || brief.site_summary || {};
+  const analysisText = brief.analysis_text || "\u6682\u65f6\u6ca1\u6709\u751f\u6210\u6837\u5730\u8ba4\u77e5\u7b80\u62a5\u3002";
+  const questions = (brief.suggested_questions || []).slice(0, 4);
+  dom.surveySiteBriefBody.innerHTML = `
+    <div class="survey-brief-metrics compact">
+      <span>\u4e54\u6728 ${snapshot.tree_count || 0}\u682a</span>
+      <span>\u6811\u79cd ${snapshot.species_count || 0}\u79cd</span>
+      <span>\u6837\u65b9 ${snapshot.subplot_count || 0}\u4e2a</span>
+    </div>
+    <div class="survey-ai-brief-text">${renderMarkdown(analysisText)}</div>
+    ${questions.length ? `<div class="survey-question-suggestions">
+      <div class="survey-question-title">\u4f60\u53ef\u4ee5\u8fd9\u6837\u7ee7\u7eed\u95ee\uff1a</div>
+      ${questions.map((question) => `<button type="button" class="survey-question-chip" data-question="${escapeHtml(question)}">${escapeHtml(question)}</button>`).join("")}
+    </div>` : ""}
+  `;
+  dom.surveySiteBriefBody.querySelectorAll(".survey-question-chip").forEach((button) => {
+    button.addEventListener("click", () => {
+      ensureSurveyPlanningChatPanel();
+      if (dom.surveyPlanningChatInput) {
+        dom.surveyPlanningChatInput.value = button.dataset.question || button.textContent || "";
+        dom.surveyPlanningChatInput.focus();
+      }
+    });
+  });
+}
+
+function ensureSurveyPlanningChatPanel() {
+  if (document.querySelector("#surveyPlanningChat") || !dom.surveySiteBrief) return;
+  const panel = document.createElement("div");
+  panel.id = "surveyPlanningChat";
+  panel.className = "survey-inline-chat survey-planning-chat";
+  panel.innerHTML = `
+    <div class="survey-chat-head">
+      <i data-lucide="bot"></i>
+      <span>\u8c03\u67e5\u65b9\u6848\u5bf9\u8bdd</span>
+      <span class="survey-chat-context">\u5148\u8ba8\u8bba\u9700\u6c42\uff0c\u518d\u751f\u6210\u65b9\u6848</span>
+    </div>
+    <div class="survey-planning-chat-messages" id="surveyPlanningChatMessages"></div>
+    <form class="survey-chat-composer" id="surveyPlanningChatComposer" action="javascript:void(0)">
+      <input id="surveyPlanningChatInput" placeholder="\u4f8b\u5982\uff1a\u660e\u5929\u53ea\u6709\u534a\u5929\uff0c\u5e2e\u6211\u89c4\u5212\u4e00\u6b21\u6709\u4ef7\u503c\u7684\u8c03\u67e5" />
+      <button type="submit" aria-label="\u53d1\u9001"><i data-lucide="send"></i></button>
+    </form>
+    <button class="survey-generate-from-chat" type="button" id="surveyGenerateFromChat">
+      <i data-lucide="clipboard-list"></i>
+      \u6839\u636e\u5f53\u524d\u5bf9\u8bdd\u751f\u6210\u8c03\u67e5\u65b9\u6848
+    </button>
+  `;
+  dom.surveySiteBrief.insertAdjacentElement("afterend", panel);
+  dom.surveyPlanningChat = panel;
+  dom.surveyPlanningChatMessages = panel.querySelector("#surveyPlanningChatMessages");
+  dom.surveyPlanningChatInput = panel.querySelector("#surveyPlanningChatInput");
+  dom.surveyGenerateFromChat = panel.querySelector("#surveyGenerateFromChat");
+  panel.querySelector("#surveyPlanningChatComposer").addEventListener("submit", sendSurveyPlanningMessage);
+  dom.surveyGenerateFromChat.addEventListener("click", generateSurveyPlanFromChat);
+  renderSurveyPlanningMessages();
+  renderIcons();
+}
+
+function renderSurveyPlanningMessages() {
+  if (!dom.surveyPlanningChatMessages) return;
+  if (!surveyPlanningMessages.length) {
+    dom.surveyPlanningChatMessages.innerHTML = `
+      <div class="survey-chat-placeholder">\u4f60\u53ef\u4ee5\u76f4\u63a5\u8bf4\u60f3\u8c03\u67e5\u4ec0\u4e48\u3002\u5982\u679c\u4fe1\u606f\u4e0d\u591f\uff0cAI \u4f1a\u5148\u8ffd\u95ee\uff0c\u4e0d\u4f1a\u76f4\u63a5\u751f\u6210\u6a21\u677f\u65b9\u6848\u3002</div>`;
+    return;
+  }
+  dom.surveyPlanningChatMessages.innerHTML = surveyPlanningMessages.map((message) => `
+    <div class="survey-plan-msg ${message.role}">
+      <div class="survey-plan-msg-role">${message.role === "user" ? "\u4f60" : "AI"}</div>
+      <div class="survey-plan-msg-content">${renderMarkdown(message.content || "")}</div>
+    </div>
+  `).join("");
+  dom.surveyPlanningChatMessages.scrollTop = dom.surveyPlanningChatMessages.scrollHeight;
+}
+
+function buildSurveyPlanningChatPrompt(userText) {
+  return [
+    "??????????????????????????????????????????",
+    "??????????????????????????????????????????1-2???????",
+    "????????????/???????????????????????",
+    "????????????????? JSON?",
+    "",
+    "???????",
+    userText,
+  ].join("\n");
+}
+
+async function sendSurveyPlanningMessage(event) {
+  event?.preventDefault();
+  ensureSurveyPlanningChatPanel();
+  const input = dom.surveyPlanningChatInput;
+  const userText = (input?.value || "").trim();
+  if (!userText) return;
+  input.value = "";
+  surveyPlanningMessages.push({ role: "user", content: userText });
+  surveyPlanningMessages.push({ role: "assistant", content: "\u6b63\u5728\u5206\u6790\u9700\u6c42..." });
+  renderSurveyPlanningMessages();
+  if (!surveyPlanningSessionId) surveyPlanningSessionId = `survey_plan_${createSessionId()}`;
+  try {
+    const resp = await fetch("/api/agent/chat", {
+      method: "POST",
+      headers: { "Content-Type": "application/json" },
+      body: JSON.stringify({
+        question: buildSurveyPlanningChatPrompt(userText),
+        client_id: currentClientId,
+        session_id: surveyPlanningSessionId,
+        current_page: "survey_planning",
+        context: { current_page: "survey_planning", context_policy: "auto" },
+        max_rounds: 4,
+      }),
+    });
+    const data = await resp.json();
+    surveyPlanningMessages[surveyPlanningMessages.length - 1] = {
+      role: "assistant",
+      content: data.answer || data.message || "\u6682\u65f6\u6ca1\u6709\u5f97\u5230\u56de\u7b54\u3002",
+    };
+  } catch (err) {
+    surveyPlanningMessages[surveyPlanningMessages.length - 1] = { role: "assistant", content: "\u8bf7\u6c42\u5931\u8d25\uff1a" + err.message };
+  }
+  renderSurveyPlanningMessages();
+}
+
+function buildSurveyPlanRequestFromChat() {
+  const transcript = surveyPlanningMessages
+    .filter((message) => message.content && !message.content.includes("\u6b63\u5728\u5206\u6790"))
+    .map((message) => `${message.role === "user" ? "??" : "???"}?${message.content}`)
+    .join("\n\n");
+  return [
+    "## ????????",
+    transcript || "???????????????????",
+    "",
+    "## ????",
+    "???????????????????????????",
+    "??????????????????????????????????????",
+    "?????????????????????????????????????",
+  ].join("\n");
+}
+
+async function generateSurveyPlanFromChat() {
+  ensureSurveyPlanningChatPanel();
+  if (!surveyPlanningMessages.some((message) => message.role === "user")) {
+    alert("\u8bf7\u5148\u548c\u667a\u80fd\u4f53\u8bf4\u660e\u4f60\u7684\u8c03\u67e5\u60f3\u6cd5\u3002");
+    dom.surveyPlanningChatInput?.focus();
+    return;
+  }
+  const button = dom.surveyGenerateFromChat;
+  if (button) button.disabled = true;
+  try {
+    const resp = await fetch("/api/survey/plan", {
+      method: "POST",
+      headers: { "Content-Type": "application/json" },
+      body: JSON.stringify({ request: buildSurveyPlanRequestFromChat() }),
+    });
+    const data = await resp.json();
+    if (data.status === "success" && data.plan) {
+      await openSurveyPlan(data.plan.plan_id);
+    } else {
+      alert("\u751f\u6210\u65b9\u6848\u5931\u8d25\uff1a" + (data.message || data.detail || "unknown error"));
+    }
+  } catch (err) {
+    alert("\u7f51\u7edc\u9519\u8bef\uff1a" + err.message);
+  } finally {
+    if (button) button.disabled = false;
+  }
+}
+
+function ensureSurveyPlanningFields() {
+  if (document.querySelector("#surveyPlanningFields") || !dom.surveyNewRequest) return;
+  const panel = document.createElement("div");
+  panel.id = "surveyPlanningFields";
+  panel.className = "survey-planning-fields";
+  panel.innerHTML = `
+    <details class="survey-advanced-fields">
+      <summary>\u53ef\u9009\u8865\u5145\uff1a\u4eba\u6570\u3001\u65f6\u95f4\u548c\u73b0\u573a\u7b56\u7565</summary>
+      <div class="survey-field-grid">
+        <label class="survey-field">
+          <span>\u8c03\u67e5\u76ee\u6807</span>
+          <select id="surveyGoalSelect">
+            <option value="\u7531\u667a\u80fd\u4f53\u6839\u636e\u9700\u6c42\u5224\u65ad">\u7531\u667a\u80fd\u4f53\u5224\u65ad</option>
+            <option value="\u7efc\u5408\u5de1\u68c0">\u7efc\u5408\u5de1\u68c0</option>
+            <option value="\u6570\u636e\u8d28\u91cf\u590d\u6838">\u6570\u636e\u8d28\u91cf\u590d\u6838</option>
+            <option value="\u6797\u5206\u7ed3\u6784\u4e0e\u4f18\u52bf\u6811\u79cd">\u6797\u5206\u7ed3\u6784\u4e0e\u4f18\u52bf\u6811\u79cd</option>
+            <option value="\u5f02\u5e38\u6728\u4e0e\u590d\u6d4b\u5bf9\u8c61">\u5f02\u5e38\u6728\u4e0e\u590d\u6d4b\u5bf9\u8c61</option>
+            <option value="\u5730\u5f62\u68af\u5ea6\u4e0e\u6811\u79cd\u5206\u5e03">\u5730\u5f62\u68af\u5ea6\u4e0e\u6811\u79cd\u5206\u5e03</option>
+          </select>
+        </label>
+        <label class="survey-field"><span>\u4eba\u6570</span><input id="surveyPeopleInput" type="number" min="1" max="20" placeholder="\u53ef\u4e0d\u586b" /></label>
+        <label class="survey-field"><span>\u65f6\u95f4\uff08\u5c0f\u65f6\uff09</span><input id="surveyHoursInput" type="number" min="0.5" max="12" step="0.5" placeholder="\u53ef\u4e0d\u586b" /></label>
+        <label class="survey-field"><span>\u4efb\u52a1\u4e0a\u9650</span><input id="surveyTaskLimitInput" type="number" min="3" max="60" placeholder="\u7531AI\u5224\u65ad" /></label>
+      </div>
+      <label class="survey-field">
+        <span>\u73b0\u573a\u7b56\u7565</span>
+        <select id="surveyStrategySelect">
+          <option value="\u7531\u667a\u80fd\u4f53\u6839\u636e\u9700\u6c42\u548c\u6570\u636e\u5224\u65ad">\u7531\u667a\u80fd\u4f53\u5224\u65ad</option>
+          <option value="\u4fe1\u606f\u4f18\u5148\uff0c\u51cf\u5c11\u5f80\u8fd4">\u4fe1\u606f\u4f18\u5148</option>
+          <option value="\u5f02\u5e38\u4f18\u5148">\u5f02\u5e38\u4f18\u5148</option>
+          <option value="\u4ee3\u8868\u6027\u4f18\u5148\uff0c\u4fdd\u7559\u5bf9\u7167">\u4ee3\u8868\u6027\u4f18\u5148</option>
+        </select>
+      </label>
+    </details>
+  `;
+  const requestField = dom.surveyNewRequest.closest(".survey-field");
+  requestField?.insertAdjacentElement("afterend", panel);
+}
+
+function buildSurveyPlanningRequest(rawRequest) {
+  const goal = document.querySelector("#surveyGoalSelect")?.value || "";
+  const people = document.querySelector("#surveyPeopleInput")?.value || "";
+  const hours = document.querySelector("#surveyHoursInput")?.value || "";
+  const taskLimit = document.querySelector("#surveyTaskLimitInput")?.value || "";
+  const strategy = document.querySelector("#surveyStrategySelect")?.value || "";
+  return [
+    "## \u7528\u6237\u539f\u59cb\u9700\u6c42",
+    rawRequest,
+    "",
+    "## \u5916\u4e1a\u8d44\u6e90\u7ea6\u675f",
+    `\u8c03\u67e5\u76ee\u6807\uff1a${goal}`,
+    `\u73b0\u573a\u4eba\u6570\uff1a${people}`,
+    `\u53ef\u7528\u65f6\u95f4\uff1a${hours}\u5c0f\u65f6`,
+    `\u6700\u591a\u4efb\u52a1\u6570\uff1a${taskLimit}`,
+    `\u73b0\u573a\u7b56\u7565\uff1a${strategy}`,
+    "",
+    "## \u65b9\u6848\u8981\u6c42",
+    "\u8bf7\u6839\u636e\u6837\u5730\u6570\u636e\u3001\u5730\u5f62\u3001\u6c14\u5019\u80cc\u666f\u548c\u4e0a\u8ff0\u8d44\u6e90\u7ea6\u675f\u751f\u6210\u53ef\u6267\u884c\u7684\u5916\u4e1a\u8c03\u67e5\u4efb\u52a1\u5355\u3002",
+    "\u6bcf\u6761\u4efb\u52a1\u9700\u8bf4\u660e\u4e3a\u4ec0\u4e48\u67e5\u3001\u5230\u73b0\u573a\u770b\u4ec0\u4e48\u3001\u8bb0\u5f55\u4ec0\u4e48\u3002",
+  ].join("\n");
+}
 
 function initSurveyEventListeners() {
   // 新建调查方案
   addClickListener(dom.newSurveyBtn, () => {
-    dom.surveyNewDialog.showModal();
+    ensureSurveyPlanningChatPanel();
+    dom.surveyPlanningChat?.scrollIntoView({ behavior: "smooth", block: "center" });
+    dom.surveyPlanningChatInput?.focus();
   });
   addClickListener(dom.surveyNewDialogClose, () => dom.surveyNewDialog.close());
   addClickListener(dom.surveyNewCancel, () => dom.surveyNewDialog.close());
 
   addClickListener(dom.surveyNewSubmit, async () => {
     const request = dom.surveyNewRequest.value.trim();
-    if (!request) { alert("请输入调查需求"); return; }
+    if (!request) { alert("请输入调查目标，例如：我想去看看 0101 样方的异常木"); return; }
 
     dom.surveyNewLoading.style.display = "block";
     dom.surveyNewSubmit.disabled = true;
@@ -1749,7 +2415,55 @@ function initSurveyEventListeners() {
     }
   });
 
+  // 咨询智能体 — 带着方案上下文切换到对话视图
+  addClickListener(dom.surveyChatBtn, async () => {
+    if (!currentPlanId) return;
+    try {
+      const resp = await fetch(`/api/survey/plans/${currentPlanId}`);
+      const data = await resp.json();
+      if (data.status !== "success" || !data.plan) {
+        alert("获取方案失败");
+        return;
+      }
+      const plan = data.plan;
+      const recs = plan.recommendations || [];
+
+      // 构建方案摘要作为对话上下文
+      const summary = [
+        `## 当前调查方案：${plan.title || "未命名"}`,
+        `状态：${plan.status || "未知"}`,
+        `进度：${plan.completed_count || 0}/${recs.length}`,
+        ``,
+        `### 调查清单（${recs.length} 条）：`,
+        ...recs.map((r, i) =>
+          `  ${i + 1}. [${r.priority === "high" ? "🔴" : r.priority === "medium" ? "🟡" : "🟢"}] ` +
+          `${r.tree_id ? `🌲 ${r.tree_id}` : `📍 样地 ${r.subplot_id}`} ` +
+          `${r.species ? `(${r.species})` : ""} — ${(r.reason || "").slice(0, 60)}...`
+        ),
+        ``,
+        `请帮我指导如何开展这些调查，针对具体树木给出更详细的现场检查指南。`,
+      ].join("\n");
+
+      // 切换到对话视图，并自动发送咨询消息
+      switchView("chat");
+      const chatInput = dom.queryInput;
+      if (chatInput) {
+        chatInput.value = summary;
+        // 自动发送
+        setTimeout(() => {
+          dom.composer.dispatchEvent(new Event("submit"));
+        }, 300);
+      }
+    } catch (err) {
+      alert("获取方案失败: " + err.message);
+    }
+  });
+
   // 观察记录弹窗
+  if (dom.surveyChatComposer) {
+    dom.surveyChatComposer.addEventListener("submit", sendSurveyDetailChatMessage);
+  }
+
   addClickListener(dom.surveyObsDialogClose, () => dom.surveyObsDialog.close());
   addClickListener(dom.surveyObsSave, saveSurveyObservation);
   addClickListener(dom.surveyObsSkip, skipSurveyObservation);
@@ -1803,6 +2517,75 @@ async function loadSurveyList() {
 }
 
 // ---- 打开方案详情 ----
+
+function renderSurveyDetailChatMessages() {
+  if (!dom.surveyChatMessages) return;
+  if (!surveyDetailChatMessages.length) {
+    dom.surveyChatMessages.innerHTML = `<div class="survey-chat-placeholder">\u8f93\u5165\u95ee\u9898\uff0cAI \u4f1a\u7ed3\u5408\u5f53\u524d\u65b9\u6848\u548c\u63a8\u8350\u4efb\u52a1\u6307\u5bfc\u4f60\u8c03\u67e5\u3002</div>`;
+    return;
+  }
+  dom.surveyChatMessages.innerHTML = surveyDetailChatMessages.map((message) => `
+    <div class="survey-plan-msg ${message.role}">
+      <div class="survey-plan-msg-role">${message.role === "user" ? "\u4f60" : "AI"}</div>
+      <div class="survey-plan-msg-content">${renderMarkdown(message.content || "")}</div>
+    </div>
+  `).join("");
+  dom.surveyChatMessages.scrollTop = dom.surveyChatMessages.scrollHeight;
+}
+
+function buildSurveyDetailPrompt(userText) {
+  const recs = (currentSurveyRecommendations || []).slice(0, 30).map((rec, index) => {
+    return `${index + 1}. ${rec.tree_id || "\u6837\u65b9\u4efb\u52a1"} / \u6837\u65b9${rec.subplot_id || "?"} / ${rec.species || ""} / ${rec.priority || ""} / ${rec.reason || ""}`;
+  }).join("\n");
+  return [
+    "\u4f60\u662f\u751f\u6001\u91ce\u5916\u8c03\u67e5\u73b0\u573a\u6307\u5bfc\u667a\u80fd\u4f53\u3002\u8bf7\u7ed3\u5408\u5f53\u524d\u8c03\u67e5\u65b9\u6848\u56de\u7b54\u7528\u6237\u3002",
+    "\u56de\u7b54\u91cd\u70b9\u662f\uff1a\u600e\u4e48\u627e\u3001\u73b0\u573a\u770b\u4ec0\u4e48\u3001\u600e\u4e48\u8bb0\u5f55\u3001\u5982\u679c\u73b0\u573a\u60c5\u51b5\u4e0d\u4e00\u81f4\u600e\u4e48\u8c03\u6574\u3002",
+    "\u4e0d\u8981\u91cd\u65b0\u751f\u6210\u5b8c\u6574\u65b9\u6848\uff0c\u9664\u975e\u7528\u6237\u660e\u786e\u8981\u6c42\u4fee\u6539\u65b9\u6848\u3002",
+    "",
+    `\u5f53\u524d\u65b9\u6848\uff1a${currentSurveyPlan?.title || "\u672a\u547d\u540d\u65b9\u6848"}`,
+    `\u65b9\u6848\u8bf4\u660e\uff1a${currentSurveyPlan?.summary || ""}`,
+    "\u5f53\u524d\u4efb\u52a1\uff1a",
+    recs,
+    "",
+    "\u7528\u6237\u95ee\u9898\uff1a",
+    userText,
+  ].join("\n");
+}
+
+async function sendSurveyDetailChatMessage(event) {
+  event?.preventDefault();
+  const input = dom.surveyChatInput;
+  const userText = (input?.value || "").trim();
+  if (!userText || !currentPlanId) return;
+  input.value = "";
+  surveyDetailChatMessages.push({ role: "user", content: userText });
+  surveyDetailChatMessages.push({ role: "assistant", content: "\u6b63\u5728\u7ed3\u5408\u65b9\u6848\u5206\u6790..." });
+  renderSurveyDetailChatMessages();
+  if (!surveyDetailChatSessionId) surveyDetailChatSessionId = `survey_detail_${currentPlanId}_${createSessionId()}`;
+  try {
+    const resp = await fetch("/api/agent/chat", {
+      method: "POST",
+      headers: { "Content-Type": "application/json" },
+      body: JSON.stringify({
+        question: buildSurveyDetailPrompt(userText),
+        client_id: currentClientId,
+        session_id: surveyDetailChatSessionId,
+        current_page: "survey_plan_detail",
+        context: { current_page: "survey_plan_detail", current_plan_id: currentPlanId, context_policy: "auto" },
+        max_rounds: 4,
+      }),
+    });
+    const data = await resp.json();
+    surveyDetailChatMessages[surveyDetailChatMessages.length - 1] = {
+      role: "assistant",
+      content: data.answer || data.message || "\u6682\u65f6\u6ca1\u6709\u5f97\u5230\u56de\u7b54\u3002",
+    };
+  } catch (err) {
+    surveyDetailChatMessages[surveyDetailChatMessages.length - 1] = { role: "assistant", content: "\u8bf7\u6c42\u5931\u8d25\uff1a" + err.message };
+  }
+  renderSurveyDetailChatMessages();
+}
+
 async function openSurveyPlan(planId) {
   currentPlanId = planId;
   try {
@@ -1814,6 +2597,8 @@ async function openSurveyPlan(planId) {
     }
     const plan = data.plan;
     const recs = plan.recommendations || [];
+    currentSurveyPlan = plan;
+    currentSurveyRecommendations = recs;
 
     dom.surveyHome.classList.add("hidden");
     dom.surveyDetail.classList.remove("hidden");
@@ -1834,7 +2619,9 @@ async function openSurveyPlan(planId) {
     dom.surveyAiAnalysisText.textContent = plan.ai_analysis || "（无 AI 分析）";
 
     // 渲染建议列表
+    ensureSurveyRevisePanel();
     renderSurveyRecs(recs);
+    renderSurveyDetailChatMessages();
 
     switchView("survey");
   } catch (err) {
@@ -1845,21 +2632,21 @@ async function openSurveyPlan(planId) {
 // ---- 渲染建议列表 ----
 function renderSurveyRecs(recs) {
   if (!recs.length) {
-    dom.surveyRecList.innerHTML = `<div class="survey-empty">该方案暂无调查建议</div>`;
+    dom.surveyRecList.innerHTML = `<div class="survey-empty">\u8be5\u65b9\u6848\u6682\u65e0\u8c03\u67e5\u5efa\u8bae</div>`;
     return;
   }
 
   dom.surveyRecList.innerHTML = recs.map(rec => {
     const priority = rec.priority || "medium";
     const status = rec.status || "pending";
-    const treeInfo = rec.tree_id ? `🌲 ${rec.tree_id}` : `📍 样地 ${rec.subplot_id || "?"}`;
-    const speciesInfo = rec.species ? `（${rec.species}）` : "";
+    const treeInfo = rec.tree_id ? `\u{1F333} ${rec.tree_id}` : `\u{1F4CD} \u6837\u65b9 ${rec.subplot_id || "?"}`;
+    const speciesInfo = rec.species ? `\uFF08${rec.species}\uFF09` : "";
     const categoryMap = {
-      health_check: "健康检查", morphology: "形态关注", competition: "竞争压力",
-      climate_stress: "气候胁迫", species_observation: "物种观察", control: "对照",
+      health_check: "\u5065\u5eb7\u68c0\u67e5", morphology: "\u5f62\u6001\u5173\u6ce8", competition: "\u7ade\u4e89\u538b\u529b",
+      climate_stress: "\u6c14\u5019\u80c1\u8feb", species_observation: "\u7269\u79cd\u89c2\u5bdf", control: "\u5bf9\u7167",
     };
-    const categoryLabel = categoryMap[rec.category] || rec.category || "未分类";
-    const priorityLabel = {high: "高", medium: "中", low: "低"}[priority] || priority;
+    const categoryLabel = categoryMap[rec.category] || rec.category || "\u672a\u5206\u7c7b";
+    const priorityLabel = {high: "\u9ad8", medium: "\u4e2d", low: "\u4f4e"}[priority] || priority;
     const isCompleted = status === "completed";
     const isSkipped = status === "skipped";
 
@@ -1871,32 +2658,40 @@ function renderSurveyRecs(recs) {
         </div>
         <div class="survey-rec-meta">
           <span class="survey-rec-chip">${categoryLabel}</span>
-          <span class="survey-rec-chip">样地 ${rec.subplot_id || "?"}</span>
+          <span class="survey-rec-chip">\u6837\u65b9 ${rec.subplot_id || "?"}</span>
         </div>
         <div class="survey-rec-reason">${escapeHtml(rec.reason || "")}</div>
-        <div class="survey-rec-actions"><strong>建议行动：</strong>${escapeHtml(rec.suggested_actions || "")}</div>
+        <div class="survey-rec-actions"><strong>\u5efa\u8bae\u884c\u52a8\uFF1A</strong>${escapeHtml(rec.suggested_actions || "")}</div>
         <div class="survey-rec-btns">
           <button class="survey-rec-btn record ${isCompleted ? 'completed' : ''}" data-rec-id="${rec.rec_id}">
             <i data-lucide="${isCompleted ? 'check-circle' : 'clipboard-list'}"></i>
-            ${isCompleted ? '已记录' : '记录'}
+            ${isCompleted ? '\u5df2\u8bb0\u5f55' : '\u8bb0\u5f55'}
+          </button>
+          <button class="survey-rec-btn locate" data-rec-id="${rec.rec_id}">
+            <i data-lucide="map-pin"></i>
+            \u627e\u6811
           </button>
           <button class="survey-rec-btn skip ${isSkipped ? 'skipped' : ''}" data-rec-id="${rec.rec_id}">
             <i data-lucide="${isSkipped ? 'x-circle' : 'skip-forward'}"></i>
-            ${isSkipped ? '已跳过' : '跳过'}
+            ${isSkipped ? '\u5df2\u8df3\u8fc7' : '\u8df3\u8fc7'}
           </button>
         </div>
       </div>
     `;
   }).join("");
 
-  // 更新图标
   if (window.lucide) lucide.createIcons();
 
-  // 绑定事件
   dom.surveyRecList.querySelectorAll(".survey-rec-btn.record").forEach(btn => {
     btn.addEventListener("click", () => {
       const recId = parseInt(btn.dataset.recId);
       openObservationDialog(recId);
+    });
+  });
+  dom.surveyRecList.querySelectorAll(".survey-rec-btn.locate").forEach(btn => {
+    btn.addEventListener("click", async () => {
+      const recId = parseInt(btn.dataset.recId);
+      await locateSurveyRecommendation(recId);
     });
   });
   dom.surveyRecList.querySelectorAll(".survey-rec-btn.skip").forEach(btn => {
@@ -1908,51 +2703,95 @@ function renderSurveyRecs(recs) {
 }
 
 // ---- 打开观察记录弹窗 ----
+function findCurrentRecommendation(recId) {
+  return currentSurveyRecommendations.find((rec) => String(rec.rec_id) === String(recId)) || null;
+}
+
+function renderFieldCheckItems(items = []) {
+  if (!items.length) return "";
+  const rows = items.map((item) => `
+    <li>
+      <strong>${escapeHtml(item.label || "\u6838\u67e5\u9879")}</strong>
+      <span>${escapeHtml(item.prompt || "")}</span>
+    </li>
+  `).join("");
+  return `<div class="survey-check-items"><div class="survey-check-title">\u73b0\u573a\u6838\u67e5\u91cd\u70b9</div><ul>${rows}</ul></div>`;
+}
+
+async function locateSurveyRecommendation(recId) {
+  const rec = findCurrentRecommendation(recId);
+  if (!rec) return;
+  const subplotId = rec.subplot_id || "";
+  if (!subplotId) {
+    alert("\u8fd9\u6761\u5efa\u8bae\u6ca1\u6709\u6837\u65b9\u7f16\u53f7\uff0c\u6682\u65f6\u65e0\u6cd5\u5b9a\u4f4d\u3002");
+    return;
+  }
+  const ok = await selectSample(String(subplotId));
+  if (ok && rec.tree_id) {
+    selectedTreeId = String(rec.tree_id).toUpperCase();
+    renderAll();
+    showPlotPanel();
+  }
+}
+
+// ---- open observation dialog ----
 function openObservationDialog(recId) {
   currentRecId = recId;
-  const card = dom.surveyRecList.querySelector(`.survey-rec-card[data-rec-id="${recId}"]`);
-  if (card) {
-    const treeText = card.querySelector(".survey-rec-tree")?.textContent || "";
-    const reason = card.querySelector(".survey-rec-reason")?.textContent || "";
-    const actions = card.querySelector(".survey-rec-actions")?.textContent || "";
-    dom.surveyObsInfo.innerHTML = `<strong>${escapeHtml(treeText)}</strong><br/>
-      <span style="color:var(--muted);font-size:12px;">原因：${escapeHtml(reason)}</span>`;
+  const rec = findCurrentRecommendation(recId);
+  const observation = rec?.observation || {};
+  currentObservationId = observation.obs_id || null;
+  if (rec) {
+    const treeText = rec.tree_id ? `\u{1F333} ${rec.tree_id}` : `\u{1F4CD} \u6837\u65b9 ${rec.subplot_id || "?"}`;
+    const speciesInfo = rec.species ? `\uFF08${rec.species}\uFF09` : "";
+    dom.surveyObsInfo.innerHTML = `
+      <strong>${escapeHtml(treeText)} ${escapeHtml(speciesInfo)}</strong><br/>
+      <span style="color:var(--muted);font-size:12px;">\u63a8\u8350\u7406\u7531\uFF1A${escapeHtml(rec.reason || "")}</span>
+      ${renderFieldCheckItems(rec.field_check_items || [])}
+    `;
   }
-  dom.surveyObsNotes.value = "";
-  dom.surveyObsHealth.value = "";
-  dom.surveyObsPest.value = "";
-  dom.surveyObsPheno.value = "";
+  dom.surveyObsNotes.value = observation.notes || "";
+  dom.surveyObsHealth.value = observation.health_status || "";
+  dom.surveyObsPest.value = observation.pest_signs || "";
+  dom.surveyObsPheno.value = observation.phenophase || "";
   dom.surveyObsDialog.showModal();
 }
 
-// ---- 保存观察记录 ----
+// ---- save observation ----
 async function saveSurveyObservation() {
   if (!currentPlanId || !currentRecId) return;
 
   const payload = {
-    plan_id: currentPlanId,
-    rec_id: currentRecId,
     notes: dom.surveyObsNotes.value.trim(),
     health_status: dom.surveyObsHealth.value || null,
     pest_signs: dom.surveyObsPest.value || null,
     phenophase: dom.surveyObsPheno.value || null,
   };
 
+  const createPayload = {
+    plan_id: currentPlanId,
+    rec_id: currentRecId,
+    ...payload,
+  };
+
   try {
-    const resp = await fetch("/api/survey/observations", {
-      method: "POST",
+    const url = currentObservationId
+      ? `/api/survey/observations/${currentObservationId}`
+      : "/api/survey/observations";
+    const resp = await fetch(url, {
+      method: currentObservationId ? "PUT" : "POST",
       headers: { "Content-Type": "application/json" },
-      body: JSON.stringify(payload),
+      body: JSON.stringify(currentObservationId ? payload : createPayload),
     });
     const data = await resp.json();
     if (data.status === "success") {
+      currentObservationId = data.observation?.obs_id || currentObservationId;
       dom.surveyObsDialog.close();
-      await updateRecStatus(currentRecId, "completed");
+      if (currentPlanId) await openSurveyPlan(currentPlanId);
     } else {
-      alert("保存失败: " + (data.message || ""));
+      alert("\u4fdd\u5b58\u5931\u8d25: " + (data.message || data.detail || ""));
     }
   } catch (err) {
-    alert("网络错误: " + err.message);
+    alert("\u7f51\u7edc\u9519\u8bef: " + err.message);
   }
 }
 

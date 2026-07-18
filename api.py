@@ -2075,6 +2075,10 @@ class SurveyPlanRequest(BaseModel):
     request: str = Field(..., min_length=1, description="调查需求，如'想看看干旱对青海云杉的影响'")
 
 
+class SurveyPlanReviseRequest(BaseModel):
+    instruction: str = Field(..., min_length=1, description="Natural-language revision instruction")
+
+
 class ObservationRecordRequest(BaseModel):
     plan_id: int
     rec_id: Optional[int] = None
@@ -2098,6 +2102,15 @@ class UpdateObservationRequest(BaseModel):
     photo_paths: Optional[str] = None
 
 
+@app.get("/api/survey/site-brief", tags=["survey"])
+def survey_site_brief() -> Dict[str, Any]:
+    """Return site-level brief for intelligent field survey planning."""
+    try:
+        return svm.get_site_survey_brief()
+    except Exception as exc:
+        raise HTTPException(status_code=500, detail=f"site brief failed: {exc}")
+
+
 @app.post("/api/survey/plan", tags=["survey"])
 def survey_generate_plan(payload: SurveyPlanRequest) -> Dict[str, Any]:
     """
@@ -2109,6 +2122,20 @@ def survey_generate_plan(payload: SurveyPlanRequest) -> Dict[str, Any]:
         return result
     except Exception as exc:
         raise HTTPException(status_code=500, detail=f"方案生成失败: {exc}")
+
+
+@app.post("/api/survey/plans/{plan_id}/revise", tags=["survey"])
+def survey_revise_plan(plan_id: int, payload: SurveyPlanReviseRequest) -> Dict[str, Any]:
+    """Revise an existing survey plan from a natural-language instruction."""
+    try:
+        result = svm.revise_survey_plan(plan_id, payload.instruction)
+        if result.get("status") == "error":
+            raise HTTPException(status_code=400, detail=result.get("message", "revision failed"))
+        return result
+    except HTTPException:
+        raise
+    except Exception as exc:
+        raise HTTPException(status_code=500, detail=f"plan revision failed: {exc}")
 
 
 @app.get("/api/survey/plans", tags=["survey"])

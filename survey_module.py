@@ -81,6 +81,15 @@ CREATE TABLE IF NOT EXISTS field_observations (
     FOREIGN KEY (plan_id) REFERENCES field_survey_plans(plan_id),
     FOREIGN KEY (rec_id) REFERENCES survey_recommendations(rec_id)
 );
+
+CREATE TABLE IF NOT EXISTS survey_site_briefs (
+    brief_id INTEGER PRIMARY KEY AUTOINCREMENT,
+    brief_key TEXT NOT NULL UNIQUE,
+    analysis_text TEXT NOT NULL,
+    payload_json TEXT,
+    created_at TEXT DEFAULT (datetime('now','localtime')),
+    updated_at TEXT DEFAULT (datetime('now','localtime'))
+);
 """
 
 
@@ -109,20 +118,37 @@ def _get_conn() -> sqlite3.Connection:
 # 数据采集 — 为 AI 提供上下文
 # =============================================================================
 
+def _detect_species_column(conn) -> Optional[str]:
+    rows = conn.execute("PRAGMA table_info(tree_observations)").fetchall()
+    columns = [row["name"] for row in rows]
+    candidates = ["species", "species_name", "species_cn", "accepted_name_cn", "taxon_name", "tree_species"]
+    for column in candidates:
+        if column in columns:
+            count = conn.execute(
+                f"SELECT COUNT(*) AS n FROM tree_observations WHERE {column} IS NOT NULL AND TRIM({column}) <> ''"
+            ).fetchone()["n"]
+            if count:
+                return column
+    return None
+
+
 def _gather_species_overview() -> List[Dict[str, Any]]:
-    """获取树种概况"""
+    """Get species overview with schema-tolerant species column detection."""
     with _get_conn() as conn:
-        rows = conn.execute("""
+        species_col = _detect_species_column(conn)
+        if not species_col:
+            return []
+        rows = conn.execute(f"""
             SELECT
-                species,
+                {species_col} AS species,
                 COUNT(*) AS count,
                 ROUND(AVG(tree_dbh_cm), 1) AS avg_dbh,
                 ROUND(AVG(tree_height_m), 1) AS avg_height,
                 ROUND(AVG(CASE WHEN health_status = 'good' THEN 1.0 ELSE 0 END) * 100, 1) AS health_good_pct,
                 ROUND(AVG(CASE WHEN health_status = 'poor' THEN 1.0 ELSE 0 END) * 100, 1) AS health_poor_pct
             FROM tree_observations
-            WHERE species IS NOT NULL AND TRIM(species) <> ''
-            GROUP BY species
+            WHERE {species_col} IS NOT NULL AND TRIM({species_col}) <> ''
+            GROUP BY {species_col}
             ORDER BY count DESC
         """).fetchall()
     return rows
@@ -194,18 +220,32 @@ def _gather_climate_context() -> Dict[str, Any]:
     return context
 
 
+def _table_exists(conn, table_name: str) -> bool:
+    row = conn.execute(
+        "SELECT name FROM sqlite_master WHERE type IN ('table','view') AND name=?",
+        (table_name,),
+    ).fetchone()
+    return row is not None
+
+
 def _gather_topography_context() -> List[Dict[str, Any]]:
-    """获取地形概况"""
+    """Get topography overview from available table/view."""
     with _get_conn() as conn:
-        rows = conn.execute("""
+        source = "topography_observations" if _table_exists(conn, "topography_observations") else None
+        if source is None and _table_exists(conn, "vw_tree_topography_context"):
+            source = "vw_tree_topography_context"
+        if source is None:
+            return []
+        rows = conn.execute(f"""
             SELECT
                 subplot_id,
                 ROUND(AVG(elevation_m), 1) AS mean_elevation,
                 ROUND(AVG(slope_degree), 1) AS mean_slope,
                 ROUND(AVG(aspect_degree), 1) AS mean_aspect
-            FROM topography_observations
+            FROM {source}
+            WHERE subplot_id IS NOT NULL
             GROUP BY subplot_id
-            LIMIT 20
+            LIMIT 600
         """).fetchall()
     return rows
 
@@ -238,6 +278,182 @@ def _gather_subplot_summary(subplot_ids: Optional[List[str]] = None) -> List[Dic
     return rows
 
 
+
+def _row_to_dict(row: Any) -> Dict[str, Any]:
+    return dict(row) if row is not None else {}
+
+
+_SITE_BRIEF_CACHE: Optional[Dict[str, Any]] = None
+
+
+def _read_site_brief_cache(brief_key: str = "default") -> Optional[Dict[str, Any]]:
+    try:
+        with _get_conn() as conn:
+            row = conn.execute(
+                "SELECT analysis_text, payload_json FROM survey_site_briefs WHERE brief_key=?",
+                (brief_key,),
+            ).fetchone()
+    except Exception:
+        return None
+    if not row:
+        return None
+    try:
+        payload = json.loads(row.get("payload_json") or "{}")
+    except Exception:
+        payload = {}
+    if not isinstance(payload, dict):
+        payload = {}
+    payload["analysis_text"] = row.get("analysis_text") or payload.get("analysis_text") or ""
+    return payload if payload.get("analysis_text") else None
+
+
+def _write_site_brief_cache(brief: Dict[str, Any], brief_key: str = "default") -> None:
+    analysis_text = str(brief.get("analysis_text") or "").strip()
+    if not analysis_text:
+        return
+    payload_json = json.dumps(brief, ensure_ascii=False, default=str)
+    with _get_conn() as conn:
+        conn.execute(
+            """
+            INSERT INTO survey_site_briefs (brief_key, analysis_text, payload_json)
+            VALUES (?, ?, ?)
+            ON CONFLICT(brief_key) DO UPDATE SET
+                analysis_text=excluded.analysis_text,
+                payload_json=excluded.payload_json,
+                updated_at=datetime('now','localtime')
+            """,
+            (brief_key, analysis_text, payload_json),
+        )
+        conn.commit()
+
+
+
+
+
+def _fallback_site_analysis(site_summary: Dict[str, Any], top_species: List[Dict[str, Any]], terrain_summary: Dict[str, Any]) -> str:
+    species_text = "\u3001".join(
+        f"{item.get('species')}\uff08{item.get('count')}\u682a\uff09"
+        for item in top_species[:4]
+        if item.get("species")
+    ) or "\u6811\u79cd\u7edf\u8ba1\u6682\u4e0d\u5b8c\u6574"
+    if terrain_summary.get("min_elevation_m") is not None:
+        terrain_text = (
+            f"\u5730\u5f62\u8bb0\u5f55\u663e\u793a\uff0c\u6837\u5730\u8986\u76d6\u6d77\u62d4\u7ea6{terrain_summary.get('min_elevation_m')}-"
+            f"{terrain_summary.get('max_elevation_m')}m\uff0c\u5e73\u5747\u5761\u5ea6\u7ea6{terrain_summary.get('mean_slope_degree')}\u00b0\u3002"
+        )
+    else:
+        terrain_text = "\u5730\u5f62\u8bb0\u5f55\u6682\u4e0d\u5b8c\u6574\uff0c\u9700\u8981\u7ed3\u5408\u6837\u65b9\u4f4d\u7f6e\u548c\u73b0\u573a\u89c2\u5bdf\u8865\u5145\u5224\u65ad\u3002"
+    return (
+        f"\u5f53\u524d\u6837\u5730\u5df2\u8bb0\u5f55\u4e54\u6728{site_summary.get('tree_count', 0)}\u682a\u3001"
+        f"\u6837\u65b9{site_summary.get('subplot_count', 0)}\u4e2a\u3001\u6811\u79cd{site_summary.get('species_count', 0)}\u79cd\u3002"
+        f"\u4e3b\u8981\u6811\u79cd\u5305\u62ec{species_text}\u3002{terrain_text}"
+        "\u4ece\u8c03\u67e5\u7406\u89e3\u4e0a\u770b\uff0c\u7b2c\u4e00\u8f6e\u5e94\u91cd\u70b9\u628a\u6797\u5206\u7ed3\u6784\u3001\u6811\u79cd\u7ec4\u6210\u3001\u5730\u5f62\u68af\u5ea6\u548c\u5f02\u5e38\u5355\u6728\u653e\u5728\u540c\u4e00\u5f20\u8bc1\u636e\u94fe\u91cc\u770b\uff0c"
+        "\u4e0d\u8981\u53ea\u770b\u5355\u4e2a\u6307\u6807\u3002\u5efa\u8bae\u4f18\u5148\u6838\u67e5\u4ee3\u8868\u6027\u6837\u65b9\u3001\u8fb9\u7f18\u6216\u7279\u6b8a\u5730\u5f62\u6837\u65b9\u3001\u4ee5\u53ca\u5f62\u6001\u6216\u8bb0\u5f55\u5f02\u5e38\u7684\u5355\u6728\uff0c"
+        "\u7528\u73b0\u573a\u89c2\u5bdf\u8865\u8db3\u51a0\u5c42\u53d7\u538b\u3001\u66f4\u65b0\u72b6\u51b5\u3001\u571f\u58e4\u6e7f\u5ea6\u3001\u75c5\u866b\u5bb3\u75d5\u8ff9\u548c\u4eba\u4e3a\u5e72\u6270\u7b49\u6570\u636e\u5e93\u65e0\u6cd5\u76f4\u63a5\u786e\u8ba4\u7684\u4fe1\u606f\u3002"
+    )
+
+
+def _generate_site_analysis_with_agent(snapshot: Dict[str, Any]) -> Optional[str]:
+    try:
+        from agent import run_agent_chat
+    except Exception:
+        return None
+    prompt = (
+        "\u4f60\u662f\u6837\u5730\u91ce\u5916\u8c03\u67e5\u4e13\u5bb6\u3002\u8bf7\u57fa\u4e8e\u4e0b\u9762\u7684\u6570\u636e\u5feb\u7167\uff0c\u5199\u4e00\u6bb5\u9762\u5411\u8c03\u67e5\u4eba\u5458\u7684\u6837\u5730\u8ba4\u77e5\u6458\u8981\u3002"
+        "\u91cd\u70b9\u8bf4\u660e\u8fd9\u4e2a\u6837\u5730\u76ee\u524d\u5448\u73b0\u51fa\u7684\u6797\u5206\u3001\u6811\u79cd\u3001\u5730\u5f62\u548c\u6c14\u5019\u80cc\u666f\u7279\u70b9\uff0c\u4ee5\u53ca\u4e3a\u4e86\u66f4\u597d\u7406\u89e3\u8fd9\u4e2a\u6837\u5730\uff0c"
+        "\u73b0\u573a\u8c03\u67e5\u5e94\u8be5\u91cd\u70b9\u89c2\u5bdf\u54ea\u4e9b\u73b0\u8c61\u3001\u8865\u5145\u54ea\u4e9b\u8bc1\u636e\u3002\u4e0d\u8981\u53ea\u7f57\u5217\u6570\u636e\u5e93\u6307\u6807\uff0c\u4e0d\u8981\u8bf4'\u82e5\u660e\u5929\u65f6\u95f4\u6709\u9650'\uff0c"
+        "\u4e0d\u8981\u8f93\u51faJSON\u3002\u7528\u4e2d\u6587\uff0c2\u52303\u6bb5\uff0c\u5177\u4f53\u3001\u514b\u5236\u3001\u6709\u73b0\u573a\u6307\u5bfc\u610f\u4e49\u3002\n\n"
+        f"\u6570\u636e\u5feb\u7167\uff1a{json.dumps(snapshot, ensure_ascii=False, default=str)}"
+    )
+    try:
+        result = run_agent_chat(
+            question=prompt,
+            session_id="survey_site_brief_cache",
+            client_id="survey_site_brief",
+            context={"current_page": "survey_site_brief", "context_policy": "auto"},
+            options={"max_tool_rounds": 4, "history_limit": 0},
+        )
+        answer = str(result.get("answer") or "").strip()
+        return answer or None
+    except Exception as exc:
+        print(f"[survey] site brief agent failed: {exc}")
+        return None
+
+
+def get_site_survey_brief(force_refresh: bool = False) -> Dict[str, Any]:
+    """Return AI-oriented site brief for field survey planning."""
+    global _SITE_BRIEF_CACHE
+    if _SITE_BRIEF_CACHE is not None and not force_refresh:
+        return {"status": "success", "brief": _SITE_BRIEF_CACHE, "cached": True, "cache_source": "memory"}
+    if not force_refresh:
+        persisted = _read_site_brief_cache()
+        if persisted:
+            _SITE_BRIEF_CACHE = persisted
+            return {"status": "success", "brief": persisted, "cached": True, "cache_source": "database"}
+
+    context = _gather_survey_context()
+    species = [dict(row) for row in context.get("species") or []]
+    anomalies = [dict(row) for row in context.get("anomalies") or []]
+    subplots = [dict(row) for row in context.get("subplots") or []]
+    topography = [dict(row) for row in context.get("topography") or []]
+    climate = context.get("climate") or {}
+
+    with _get_conn() as conn:
+        species_col = _detect_species_column(conn)
+        species_count_expr = f"COUNT(DISTINCT CASE WHEN {species_col} IS NOT NULL AND TRIM({species_col}) <> '' THEN {species_col} END)" if species_col else "0"
+        totals = conn.execute(f"""
+            SELECT
+                COUNT(*) AS tree_count,
+                COUNT(DISTINCT subplot_id) AS subplot_count,
+                {species_count_expr} AS species_count
+            FROM tree_observations
+        """).fetchone()
+
+    site_summary = {
+        "tree_count": int(totals.get("tree_count") or 0) if totals else 0,
+        "species_count": int(totals.get("species_count") or 0) if totals else len(species),
+        "subplot_count": int(totals.get("subplot_count") or 0) if totals else len({item.get("subplot_id") for item in subplots if item.get("subplot_id")}),
+    }
+    top_species = species[:5]
+    high_attention = anomalies[:8]
+
+    elevations = [float(item.get("mean_elevation")) for item in topography if item.get("mean_elevation") is not None]
+    slopes = [float(item.get("mean_slope")) for item in topography if item.get("mean_slope") is not None]
+    terrain_summary = {
+        "subplot_samples": len(topography),
+        "min_elevation_m": round(min(elevations), 1) if elevations else None,
+        "max_elevation_m": round(max(elevations), 1) if elevations else None,
+        "mean_slope_degree": round(sum(slopes) / len(slopes), 1) if slopes else None,
+    }
+
+    suggested_questions = [
+        "\u57fa\u4e8e\u8fd9\u4e2a\u6837\u5730\u7279\u70b9\uff0c\u5e2e\u6211\u751f\u6210\u4e00\u6b21\u7efc\u5408\u8c03\u67e5\u65b9\u6848\u3002",
+        "\u6211\u60f3\u91cd\u70b9\u4e86\u89e3\u4e3b\u8981\u6811\u79cd\u7684\u7a7a\u95f4\u5dee\u5f02\uff0c\u5e94\u8be5\u600e\u4e48\u8c03\u67e5\uff1f",
+        "\u54ea\u4e9b\u6837\u65b9\u6216\u5355\u6728\u6700\u9002\u5408\u4f5c\u4e3a\u5f02\u5e38\u590d\u6838\u5bf9\u8c61\uff1f",
+        "\u5982\u679c\u8981\u9a8c\u8bc1\u5730\u5f62\u68af\u5ea6\u4e0e\u6797\u5206\u7ed3\u6784\u5dee\u5f02\uff0c\u5e94\u8be5\u600e\u4e48\u5b89\u6392\uff1f",
+    ]
+    snapshot = {
+        "site_summary": site_summary,
+        "top_species": top_species,
+        "terrain_summary": terrain_summary,
+        "climate_context": climate,
+        "attention_examples": high_attention,
+    }
+    analysis_text = _generate_site_analysis_with_agent(snapshot) or _fallback_site_analysis(site_summary, top_species, terrain_summary)
+
+    _SITE_BRIEF_CACHE = {
+        "analysis_text": analysis_text,
+        "suggested_questions": suggested_questions,
+        "data_snapshot": site_summary,
+        "top_species": top_species,
+        "terrain_summary": terrain_summary,
+        "climate_context": climate,
+        "attention_examples": high_attention,
+    }
+    _write_site_brief_cache(_SITE_BRIEF_CACHE)
+    return {"status": "success", "brief": _SITE_BRIEF_CACHE, "cached": False, "cache_source": "generated"}
+
+
 # =============================================================================
 # AI 方案生成 — 使用智能体（ReAct Agent）分析生成
 # =============================================================================
@@ -262,60 +478,61 @@ def generate_survey_plan(user_request: str) -> Dict[str, Any]:
         print(f"[survey] 无法导入 agent: {exc}")
         return {"status": "error", "message": f"智能体模块不可用: {exc}"}
 
-    # 构造智能体提示词
-    agent_prompt = f"""我需要去野外进行林业调查，请帮我生成一份详细的调查方案。
+    # 构造智能体提示词 — 核心思路：先分析数据，再结合需求
+    agent_prompt = f"""You are a senior field ecology survey planner for a large forest monitoring plot (24 ha, 600 subplots).
+Your job is to create practical, data-driven survey plans that help field workers collect the most valuable information under real-world constraints.
 
-## 我的调查需求
+THE KEY PRINCIPLE: ANALYZE FIRST, PLAN SECOND.
+Never generate recommendations without first using your tools to examine the plot data thoroughly.
+
+MANDATORY FIRST STEP — ANALYZE THE PLOT:
+Use your available tools to investigate:
+1. What species are present and in what proportions?
+2. What is the size/DBH distribution — is it a young, mature, or mixed stand?
+3. Are there health anomalies (dead trees, poor health, high HDR > 100)?
+4. What terrain/topography context exists?
+5. What is the climate background (recent drought, temperature trends)?
+6. Based on all the above, what is the ESSENCE of this plot?
+
+Then, based on your analysis, determine:
+- What are the key ecological patterns or problems worth investigating?
+- Where is the highest information value per unit of field effort?
+- What combination of tasks gives the best picture: anomalies + representative samples + controls?
+
+HANDLING VAGUE USER REQUESTS:
+If the user's request is vague or general (e.g. "帮我看看", "常规调查"), DO NOT ask them to fill forms.
+Instead, use your data analysis to determine the most valuable targets, and explain your reasoning in ai_analysis.
+Your recommendation is based on what the data tells you, combined with whatever constraints the user mentioned.
+
+USER_REQUEST_AND_CONSTRAINTS:
 {user_request}
 
-## 你的任务
-
-请利用你所有的工具能力（数据库查询、指标计算、竞争分析、气候分析等），完成以下步骤：
-
-### 步骤1：数据探索
-- 查询数据库中与我的需求相关的树种、样地、健康数据
-- 检查气候背景（近期降水、温度异常等）
-- 分析样地的结构指标（密度、胸径、树高等）
-
-### 步骤2：综合分析
-- 将我的需求与数据关联起来，找出真正需要关注的问题
-- 比如：如果我说「干旱影响」，你要分析近期降水数据 + 哪些树/样地最可能受干旱影响
-- 比如：如果我说「病虫害」，你要关注健康状态异常的树木
-- 如果我没有特定需求，做一次全面的样地健康巡检
-
-### 步骤3：生成方案
-
-你必须以严格的 JSON 格式输出最终方案（不要额外文字，只有一个 JSON 对象）：
-
-```json
+OUTPUT — STRICT JSON ONLY (no markdown, no explanation outside the fields):
 {{
-  "title": "方案标题（简洁明了，反映调查目的）",
-  "summary": "方案总体说明（调查目标、范围、预期发现的说明，2-3句话）",
-  "ai_analysis": "你的分析过程总结（你从数据中发现了什么，为什么这些树/样地被选中，2-4句话）",
+  "title": "short Chinese title describing the plan",
+  "summary": "Chinese: brief overview of what this plan covers and why",
+  "ai_analysis": "Chinese: explain what you found from data analysis — species composition, key patterns, anomalies, terrain/climate context, why certain targets were prioritized. THIS IS YOUR ANALYSIS REPORT.",
   "recommendations": [
     {{
-      "tree_id": "具体树编号（如果是样地级建议填 null）",
-      "subplot_id": "样地编号",
-      "species": "树种名称",
+      "tree_id": "real tree_id or null",
+      "subplot_id": "real subplot_id",
+      "species": "species name or null",
       "priority": "high/medium/low",
       "category": "health_check/morphology/competition/climate_stress/species_observation/control",
-      "reason": "为什么调查这个（必须基于数据分析，有具体数据支撑）",
-      "suggested_actions": "到现场具体看什么、查什么"
+      "reason": "Chinese: data-supported reason for selecting this specific target",
+      "suggested_actions": "Chinese: specific field instructions — how to find it, what to check, what to record"
     }}
   ]
 }}
-```
 
-### 要求
-1. **每条建议必须有数据支撑**：基于你查询到的真实数据，说明具体的数字依据
-2. **建议数量 15-30 条**（适合一次野外调查的工作量）
-3. **包含 2-3 棵健康对照树**，让现场有对比参考
-4. **按优先级排序**：high 是最需要关注的
-5. **必须使用数据库中真实存在的 tree_id**
-6. **类别多样化**：不要全是 morphology，要根据实际情况分类
-7. **reason 要具体**：比如"该树健康状态为'dear'，且近期降水偏少42%"，不要笼统说"状态异常"
-
-请开始分析！先使用工具查询数据，综合分析后再输出 JSON 方案。"""
+QUALITY RULES:
+- Every tree_id MUST exist in the database (use only real IDs from your tool results).
+- Balance three types: anomaly targets (high priority), representative samples (medium), controls (low).
+- Limited time -> fewer tasks, each with high value. Abundant time -> more coverage.
+- ai_analysis is where you show your thinking — it's the most important field for user trust.
+- suggested_actions must be specific enough for a field worker to use directly.
+- Do NOT generate more than 25 recommendations unless the user explicitly asked for a comprehensive survey.
+"""
 
     try:
         # 调用智能体 — 使用完整的 ReAct 循环（工具调用 + 推理）
@@ -683,8 +900,35 @@ def _generate_deterministic_plan(user_request: str, context: Dict[str, Any]) -> 
 # 查询接口
 # =============================================================================
 
+def _build_field_check_items(rec: Dict[str, Any]) -> List[Dict[str, str]]:
+    """Build practical field checklist items from a recommendation."""
+    text = " ".join(str(rec.get(k) or "") for k in ("category", "reason", "suggested_actions")).lower()
+    items = [
+        {"key": "identity", "label": "\u6838\u5bf9\u5bf9\u8c61", "prompt": "\u6838\u5bf9\u6811\u53f7/\u6837\u65b9\u53f7\u662f\u5426\u4e0e\u63a8\u8350\u4efb\u52a1\u4e00\u81f4\uff0c\u5fc5\u8981\u65f6\u62cd\u6444\u6811\u724c\u6216\u4f4d\u7f6e\u7167\u7247\u3002"},
+        {"key": "location", "label": "\u5b9a\u4f4d\u8bb0\u5f55", "prompt": "\u8bb0\u5f55\u5f53\u524d\u4f4d\u7f6e\u3001\u6837\u65b9\u5185\u76f8\u5bf9\u65b9\u4f4d\uff0c\u4ee5\u53ca\u662f\u5426\u5bb9\u6613\u518d\u6b21\u627e\u5230\u3002"},
+    ]
+
+    def add(key: str, label: str, prompt: str) -> None:
+        if not any(item["key"] == key for item in items):
+            items.append({"key": key, "label": label, "prompt": prompt})
+
+    if any(word in text for word in ("health", "\u5065\u5eb7", "\u67af", "\u6b7b", "\u75c5", "\u866b", "\u53d7\u5bb3")):
+        add("health", "\u5065\u5eb7\u72b6\u6001", "\u89c2\u5bdf\u53f6\u8272\u3001\u67af\u679d\u3001\u65ad\u68a2\u3001\u75c5\u866b\u75d5\u8ff9\u3001\u673a\u68b0\u635f\u4f24\uff0c\u5e76\u533a\u5206\u786e\u5b9a\u89c2\u6d4b\u4e0e\u5f85\u786e\u8ba4\u73b0\u8c61\u3002")
+    if any(word in text for word in ("morph", "\u5f62\u6001", "hdr", "\u9ad8\u5f84", "\u80f8\u5f84", "\u6811\u9ad8", "\u51a0", "\u503e\u659c")):
+        add("morphology", "\u5f62\u6001\u590d\u6838", "\u590d\u6838\u80f8\u5f84\u3001\u6811\u9ad8\u3001\u51a0\u5e45\u3001\u679d\u4e0b\u9ad8\u3001\u503e\u659c\u6216\u5f2f\u66f2\u60c5\u51b5\uff0c\u6807\u660e\u660e\u663e\u6d4b\u91cf\u5f02\u5e38\u3002")
+    if any(word in text for word in ("competition", "\u7ade\u4e89", "\u53d7\u538b", "\u90bb\u6728", "\u90c1\u95ed")):
+        add("competition", "\u90bb\u6728\u7ade\u4e89", "\u89c2\u5bdf\u5468\u56f4\u90bb\u6728\u5bc6\u5ea6\u3001\u51a0\u5c42\u906e\u6321\u3001\u540c\u79cd/\u5f02\u79cd\u90bb\u6728\uff0c\u4ee5\u53ca\u5bf9\u8c61\u6728\u662f\u5426\u660e\u663e\u53d7\u538b\u3002")
+    if any(word in text for word in ("topography", "\u5730\u5f62", "\u6d77\u62d4", "\u5761", "\u6c9f", "\u810a", "\u5761\u5411")):
+        add("topography", "\u5fae\u5730\u5f62", "\u8bb0\u5f55\u5761\u4f4d\u3001\u5761\u5411\u3001\u88f8\u5ca9\u3001\u51b2\u5237\u3001\u79ef\u6c34\u6216\u571f\u58e4\u6e7f\u5ea6\u7b49\u5fae\u5730\u5f62\u7ebf\u7d22\u3002")
+    if any(word in text for word in ("climate", "\u6c14\u5019", "\u5e72\u65f1", "\u964d\u6c34", "\u4f4e\u6e29", "\u971c", "\u98ce", "\u96ea")):
+        add("climate_exposure", "\u6c14\u5019\u66b4\u9732\u75d5\u8ff9", "\u89c2\u5bdf\u5e72\u65f1\u3001\u51bb\u5bb3\u3001\u98ce\u96ea\u538b\u3001\u843d\u679d\u843d\u53f6\u7b49\u66b4\u9732\u75d5\u8ff9\uff1b\u4e0d\u8981\u76f4\u63a5\u5f52\u56e0\u4e3a\u6c14\u5019\u3002")
+
+    add("notes", "\u73b0\u573a\u5907\u6ce8", "\u8bb0\u5f55\u4e0e\u63a8\u8350\u7406\u7531\u76f8\u5173\u7684\u5173\u952e\u73b0\u8c61\u3001\u7167\u7247\u7f16\u53f7\u548c\u9700\u8981\u8865\u6d4b\u7684\u5b57\u6bb5\u3002")
+    return items
+
+
 def _get_plan_full(plan_id: int) -> Optional[Dict[str, Any]]:
-    """获取完整方案（含建议）"""
+    """Return a full survey plan with recommendations and saved observations."""
     with _get_conn() as conn:
         plan = conn.execute(
             "SELECT * FROM field_survey_plans WHERE plan_id=?",
@@ -693,10 +937,24 @@ def _get_plan_full(plan_id: int) -> Optional[Dict[str, Any]]:
         if not plan:
             return None
 
-        recommendations = conn.execute(
+        recommendation_rows = conn.execute(
             "SELECT * FROM survey_recommendations WHERE plan_id=? ORDER BY sort_order",
             (plan_id,),
         ).fetchall()
+        observations = conn.execute(
+            "SELECT * FROM field_observations WHERE plan_id=?",
+            (plan_id,),
+        ).fetchall()
+
+    obs_by_id = {obs.get("obs_id"): dict(obs) for obs in observations if obs.get("obs_id") is not None}
+    obs_by_rec = {obs.get("rec_id"): dict(obs) for obs in observations if obs.get("rec_id") is not None}
+    recommendations = []
+    for row in recommendation_rows:
+        rec = dict(row)
+        observation = obs_by_id.get(rec.get("obs_id")) or obs_by_rec.get(rec.get("rec_id"))
+        rec["observation"] = observation
+        rec["field_check_items"] = _build_field_check_items(rec)
+        recommendations.append(rec)
 
     result = dict(plan)
     result["recommendations"] = recommendations
@@ -719,6 +977,61 @@ def get_plan(plan_id: int) -> Dict[str, Any]:
     if not result:
         return {"status": "error", "message": f"方案不存在: plan_id={plan_id}"}
     return result
+
+
+def revise_survey_plan(plan_id: int, instruction: str) -> Dict[str, Any]:
+    """Create a revised survey plan from an existing plan and a natural-language instruction."""
+    instruction = str(instruction or "").strip()
+    if not instruction:
+        return {"status": "error", "message": "revision instruction is required"}
+
+    current = get_plan(plan_id)
+    if current.get("status") != "success" or not current.get("plan"):
+        return current
+
+    plan = current["plan"]
+    recommendations = plan.get("recommendations") or []
+    compact_recs = []
+    for rec in recommendations[:80]:
+        compact_recs.append({
+            "tree_id": rec.get("tree_id"),
+            "subplot_id": rec.get("subplot_id"),
+            "species": rec.get("species"),
+            "priority": rec.get("priority"),
+            "category": rec.get("category"),
+            "reason": rec.get("reason"),
+            "suggested_actions": rec.get("suggested_actions"),
+        })
+
+    revision_request = (
+        "Revise this existing field survey plan according to the user's new instruction. "
+        "Keep only real tree_id/subplot_id values already present in the database. "
+        "Return a practical updated plan, not an explanation.\n\n"
+        f"Original plan id: {plan_id}\n"
+        f"Original title: {plan.get('title') or ''}\n"
+        f"Original user request: {plan.get('user_request') or ''}\n"
+        f"Original summary: {plan.get('summary') or ''}\n"
+        f"Original recommendations JSON: {json.dumps(compact_recs, ensure_ascii=False)}\n\n"
+        f"User revision instruction: {instruction}\n"
+    )
+    revised = generate_survey_plan(revision_request)
+    if revised.get("status") == "success" and revised.get("plan"):
+        new_plan_id = revised["plan"].get("plan_id")
+        if new_plan_id:
+            with _get_conn() as conn:
+                conn.execute(
+                    "UPDATE field_survey_plans SET summary=? WHERE plan_id=?",
+                    (
+                        f"Revised from plan {plan_id}. Instruction: {instruction}",
+                        new_plan_id,
+                    ),
+                )
+                conn.commit()
+            revised = get_plan(int(new_plan_id))
+            if revised.get("status") == "success":
+                revised["revised_from_plan_id"] = plan_id
+                revised["revision_instruction"] = instruction
+    return revised
 
 
 def update_plan_status(plan_id: int, status: str) -> Dict[str, Any]:
@@ -860,15 +1173,20 @@ def get_plan_observations(plan_id: int) -> Dict[str, Any]:
 
 
 def update_recommendation_status(rec_id: int, status: str, obs_id: Optional[int] = None) -> Dict[str, Any]:
-    """更新单条建议的状态"""
+    """Update recommendation status without accidentally clearing saved observations."""
     with _get_conn() as conn:
-        conn.execute(
-            "UPDATE survey_recommendations SET status=?, completed_at=CASE WHEN ? THEN datetime('now','localtime') ELSE NULL END, obs_id=? WHERE rec_id=?",
-            (status, status == "completed", obs_id, rec_id),
-        )
+        if obs_id is None:
+            conn.execute(
+                "UPDATE survey_recommendations SET status=?, completed_at=CASE WHEN ? THEN datetime('now','localtime') ELSE NULL END WHERE rec_id=?",
+                (status, status == "completed", rec_id),
+            )
+        else:
+            conn.execute(
+                "UPDATE survey_recommendations SET status=?, completed_at=CASE WHEN ? THEN datetime('now','localtime') ELSE NULL END, obs_id=? WHERE rec_id=?",
+                (status, status == "completed", obs_id, rec_id),
+            )
         conn.commit()
 
-    # 获取 plan_id 更新进度
     with _get_conn() as conn:
         rec = conn.execute(
             "SELECT plan_id FROM survey_recommendations WHERE rec_id=?",
@@ -879,10 +1197,6 @@ def update_recommendation_status(rec_id: int, status: str, obs_id: Optional[int]
 
     return {"status": "success", "rec_id": rec_id, "new_status": status}
 
-
-# =============================================================================
-# 报告生成
-# =============================================================================
 
 def generate_report(plan_id: int) -> Dict[str, Any]:
     """生成调查对比报告"""
