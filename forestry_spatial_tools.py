@@ -22,6 +22,28 @@ import os
 import openpyxl
 from typing import Dict, Any, List
 
+
+def _repair_mojibake_text(value):
+    if not isinstance(value, str) or not value:
+        return value
+    candidates = [value]
+    for encoding in ("latin1", "cp1252", "gbk", "cp936"):
+        for decoding in ("utf-8", "gbk", "cp936"):
+            try:
+                candidates.append(value.encode(encoding).decode(decoding))
+            except Exception:
+                pass
+    suspicious = ("\u00c3", "\u00c2", "\ufffd", "?", "\u6d5c", "\u9407", "\u622chan", "\u6f50")
+    # Keep this explicit because some source edits pass through non-UTF8 consoles.
+    suspicious = ("\u00c3", "\u00c2", "\ufffd", "?", "\u6d5c", "\u9407", "\u622c", "\u6f50", "\u82a5")
+    def score(text):
+        cjk = sum(1 for ch in text if "\u4e00" <= ch <= "\u9fff")
+        penalty = sum(text.count(mark) for mark in suspicious)
+        return cjk - penalty * 4
+    return max(candidates, key=score)
+
+
+
 BASE_DIR = os.path.dirname(os.path.abspath(__file__))
 DB_PATH = os.path.join(BASE_DIR, "data", "qilian_forest.db")
 # 真实 Excel 大表路径（包含乔木每木调查数据及 6 张二元材积查算表）
@@ -735,38 +757,84 @@ def tool_calc_volume_metrics(subplot_id: str) -> str:
 # ==============================================================================
 def tool_calc_deadwood_metrics(subplot_id: str) -> str:
     """
-    测算枯死木密度、枯立木比重、枯倒木比重及树种归属。
+    ?????????????????????????????????????????
+
+    ????????? deadwood_observations???? tree_observations.health_status?
+    ??????????/??/????????????????????????????????
     """
+    subplot_id = str(subplot_id).strip()
     if not os.path.exists(DB_PATH):
-        return json.dumps({"error": f"数据库文件不存在: {DB_PATH}"}, ensure_ascii=False)
+        return json.dumps({"status": "error", "error": f"????????: {DB_PATH}"}, ensure_ascii=False)
+
     conn = sqlite3.connect(DB_PATH)
+    conn.row_factory = sqlite3.Row
     cursor = conn.cursor()
-    cursor.execute("SELECT species, total_count FROM deadwood_observations WHERE subplot_id = ?", (str(subplot_id).strip(),))
-    rows = cursor.fetchall()
+    exists = cursor.execute(
+        "SELECT name FROM sqlite_master WHERE type='table' AND name='deadwood_observations'"
+    ).fetchone()
+    if not exists:
+        conn.close()
+        return json.dumps({
+            "status": "not_available",
+            "subplot_id": subplot_id,
+            "message": "?????? deadwood_observations ???????",
+            "source_table": "deadwood_observations",
+        }, ensure_ascii=False)
+
+    rows = cursor.execute(
+        """
+        SELECT species,
+               COALESCE(total_count, 0) AS total_count,
+               COALESCE(standing_count, 0) AS standing_count,
+               COALESCE(fallen_count, 0) AS fallen_count,
+               remarks
+        FROM deadwood_observations
+        WHERE subplot_id = ? AND subplot_id <> '??'
+        ORDER BY species
+        """,
+        (subplot_id,),
+    ).fetchall()
     conn.close()
-    
-    A = 0.04
-    total_dead = sum(int(r[1] or 0) for r in rows)
-    sp_dead = {r[0]: int(r[1] or 0) for r in rows}
-    
-    # 按照典型高寒林业规律，枯死木中通常 60% 左右为枯立木，40% 为枯倒木或天然折损
-    standing_dead = int(total_dead * 0.6)
-    fallen_dead = total_dead - standing_dead
-    
+
+    species_items = []
+    total_dead = 0.0
+    standing_dead = 0.0
+    fallen_dead = 0.0
+    for row in rows:
+        total = float(row["total_count"] or 0)
+        standing = float(row["standing_count"] or 0)
+        fallen = float(row["fallen_count"] or 0)
+        total_dead += total
+        standing_dead += standing
+        fallen_dead += fallen
+        species_items.append({
+            "species": _repair_mojibake_text(row["species"]),
+            "total_count": total,
+            "standing_count": standing,
+            "fallen_count": fallen,
+            "remarks": row["remarks"] or "",
+        })
+
+    area_ha = 0.04
     return json.dumps({
-        "subplot_id": str(subplot_id),
-        "tool_implemented": "calculate_deadwood_metrics",
-        "deadwood_metrics": {
+        "status": "success",
+        "subplot_id": subplot_id,
+        "source_table": "deadwood_observations",
+        "separate_from_tree_health_status": True,
+        "subplot_area_ha": area_ha,
+        "deadwood_summary": {
             "total_deadwood_count": total_dead,
-            "deadwood_density_per_ha": round(total_dead / A, 1),
-            "standing_dead_ratio_P_standing": round(standing_dead / total_dead, 2) if total_dead else 0.0,
-            "fallen_dead_ratio_P_fallen": round(fallen_dead / total_dead, 2) if total_dead else 0.0,
-            "deadwood_species_composition": sp_dead
-        }
+            "standing_deadwood_count": standing_dead,
+            "fallen_deadwood_count": fallen_dead,
+            "deadwood_density_per_ha": round(total_dead / area_ha, 2),
+            "standing_deadwood_ratio": round(standing_dead / total_dead, 4) if total_dead else None,
+            "fallen_deadwood_ratio": round(fallen_dead / total_dead, 4) if total_dead else None,
+            "species_count": len([item for item in species_items if item.get("species")]),
+        },
+        "species_composition": species_items,
+        "interpretation_boundary": "\u67af\u6b7b\u6728\u8c03\u67e5\u8868\u53cd\u6620\u67af\u6b7b\u6728\u5b58\u91cf\u548c\u7ec4\u6210\uff0c\u4e0d\u7b49\u540c\u4e8e\u4e54\u6728\u8c03\u67e5\u8868\u4e2d\u7684\u6d3b\u7acb\u6728\u5065\u5eb7\u72b6\u6001\u6216\u5f53\u524d\u6b7b\u4ea1\u7387\u3002",
     }, ensure_ascii=False)
 
-# ==============================================================================
-# 第一批科研算子工具 6: 林下灌木物种与盖度工具 (Shrub Layer Metrics)
 # ==============================================================================
 def tool_calc_shrub_metrics(subplot_id: str) -> str:
     """

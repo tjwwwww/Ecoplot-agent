@@ -1310,8 +1310,7 @@ def _build_tool_registry() -> dict:
         },
         "tool_calc_deadwood_metrics": {
             "handler": lambda args: tool_calc_deadwood_metrics(_tool_sid(args)),
-            "enabled": False,
-            "disabled_reason": "legacy metric tool; keep for API compatibility, not default agent planning",
+            "enabled": True,
             "schema": schema_map["tool_calc_deadwood_metrics"],
             "category": "metrics",
         },

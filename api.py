@@ -403,6 +403,28 @@ def _call_tool(function_name: str, *args: Any, **kwargs: Any) -> Dict[str, Any]:
         return {"status": "failed", "tool_id": function_name, "error": str(exc)}
 
 
+
+def _repair_mojibake_text(value):
+    if not isinstance(value, str) or not value:
+        return value
+    candidates = [value]
+    for encoding in ("latin1", "cp1252", "gbk", "cp936"):
+        for decoding in ("utf-8", "gbk", "cp936"):
+            try:
+                candidates.append(value.encode(encoding).decode(decoding))
+            except Exception:
+                pass
+    suspicious = ("\u00c3", "\u00c2", "\ufffd", "?", "\u6d5c", "\u9407", "\u622chan", "\u6f50")
+    # Keep this explicit because some source edits pass through non-UTF8 consoles.
+    suspicious = ("\u00c3", "\u00c2", "\ufffd", "?", "\u6d5c", "\u9407", "\u622c", "\u6f50", "\u82a5")
+    def score(text):
+        cjk = sum(1 for ch in text if "\u4e00" <= ch <= "\u9fff")
+        penalty = sum(text.count(mark) for mark in suspicious)
+        return cjk - penalty * 4
+    return max(candidates, key=score)
+
+
+
 def _table_exists(conn: sqlite3.Connection, table_name: str) -> bool:
     return conn.execute(
         "SELECT 1 FROM sqlite_master WHERE type='table' AND name=?", (table_name,)
@@ -1120,6 +1142,124 @@ def get_subplot_metrics(subplot_id: str, force: bool = False) -> Dict[str, Any]:
     result = _compute_subplot_payload(subplot_id)
     _write_cache(subplot_id, result)
     return result
+
+
+def _deadwood_rows_to_summary(subplot_id: str, rows: Sequence[sqlite3.Row]) -> Dict[str, Any]:
+    species_composition: List[Dict[str, Any]] = []
+    total_count = 0.0
+    standing_count = 0.0
+    fallen_count = 0.0
+    for row in rows:
+        total = float(row["total_count"] or 0)
+        standing = float(row["standing_count"] or 0)
+        fallen = float(row["fallen_count"] or 0)
+        total_count += total
+        standing_count += standing
+        fallen_count += fallen
+        species_composition.append({
+            "species": _repair_mojibake_text(row["species"]),
+            "total_count": total,
+            "standing_count": standing,
+            "fallen_count": fallen,
+            "remarks": row["remarks"] or "",
+        })
+    return {
+        "status": "success",
+        "subplot_id": subplot_id,
+        "source_table": "deadwood_observations",
+        "separate_from_tree_health_status": True,
+        "subplot_area_ha": DEFAULT_SUBPLOT_AREA_HA,
+        "summary": {
+            "total_deadwood_count": total_count,
+            "standing_deadwood_count": standing_count,
+            "fallen_deadwood_count": fallen_count,
+            "deadwood_density_per_ha": round(total_count / DEFAULT_SUBPLOT_AREA_HA, 2),
+            "standing_deadwood_ratio": round(standing_count / total_count, 4) if total_count else None,
+            "fallen_deadwood_ratio": round(fallen_count / total_count, 4) if total_count else None,
+            "species_count": len([item for item in species_composition if item.get("species")]),
+        },
+        "species_composition": species_composition,
+        "interpretation_boundary": "\u672c\u7ed3\u679c\u6765\u81ea deadwood_observations \u67af\u6b7b\u6728\u8c03\u67e5\u8868\uff0c\u4e0d\u7b49\u540c\u4e8e tree_observations.health_status \u4e2d\u7684\u6d3b\u7acb\u6728\u5065\u5eb7\u72b6\u6001\u6216\u5012\u6728\u8bb0\u5f55\u3002",
+    }
+
+
+@app.get("/api/subplots/{subplot_id}/deadwood", tags=["subplots"])
+def get_subplot_deadwood(subplot_id: str) -> Dict[str, Any]:
+    """Return deadwood records for one subplot, separate from live-tree health_status."""
+    if not DB_PATH.exists():
+        raise HTTPException(status_code=500, detail=f"\u6570\u636e\u5e93\u4e0d\u5b58\u5728\uff1a{DB_PATH.name}")
+    with sqlite3.connect(DB_PATH) as conn:
+        conn.row_factory = sqlite3.Row
+        if not _table_exists(conn, "deadwood_observations"):
+            raise HTTPException(status_code=404, detail="\u672a\u627e\u5230 deadwood_observations \u67af\u6b7b\u6728\u8c03\u67e5\u8868")
+        rows = conn.execute(
+            """
+            SELECT species,
+                   COALESCE(total_count, 0) AS total_count,
+                   COALESCE(standing_count, 0) AS standing_count,
+                   COALESCE(fallen_count, 0) AS fallen_count,
+                   remarks
+            FROM deadwood_observations
+            WHERE subplot_id = ? AND subplot_id <> '??'
+            ORDER BY species
+            """,
+            (str(subplot_id).strip(),),
+        ).fetchall()
+    return _deadwood_rows_to_summary(str(subplot_id).strip(), rows)
+
+
+@app.get("/api/deadwood/subplots", tags=["deadwood"])
+def list_subplot_deadwood(
+    q: Optional[str] = None,
+    sort_by: str = Query(default="total_deadwood_count", pattern="^(subplot_id|total_deadwood_count|standing_deadwood_count|fallen_deadwood_count|deadwood_density_per_ha)$"),
+    order: str = Query(default="desc", pattern="^(asc|desc)$"),
+    offset: int = Query(default=0, ge=0),
+    limit: int = Query(default=600, ge=1, le=5000),
+) -> Dict[str, Any]:
+    """Return deadwood summary for every subplot, excluding aggregate rows."""
+    if not DB_PATH.exists():
+        raise HTTPException(status_code=500, detail=f"\u6570\u636e\u5e93\u4e0d\u5b58\u5728\uff1a{DB_PATH.name}")
+    with sqlite3.connect(DB_PATH) as conn:
+        conn.row_factory = sqlite3.Row
+        if not _table_exists(conn, "deadwood_observations"):
+            raise HTTPException(status_code=404, detail="\u672a\u627e\u5230 deadwood_observations \u67af\u6b7b\u6728\u8c03\u67e5\u8868")
+        rows = conn.execute(
+            """
+            SELECT subplot_id,
+                   SUM(COALESCE(total_count, 0)) AS total_deadwood_count,
+                   SUM(COALESCE(standing_count, 0)) AS standing_deadwood_count,
+                   SUM(COALESCE(fallen_count, 0)) AS fallen_deadwood_count,
+                   COUNT(DISTINCT CASE WHEN species IS NOT NULL AND TRIM(species) <> '' THEN species END) AS species_count
+            FROM deadwood_observations
+            WHERE subplot_id IS NOT NULL AND TRIM(subplot_id) <> '' AND subplot_id <> '??'
+            GROUP BY subplot_id
+            """
+        ).fetchall()
+    offset_value = int(getattr(offset, "default", offset))
+    limit_value = int(getattr(limit, "default", limit))
+    items = []
+    for row in rows:
+        total_count = float(row["total_deadwood_count"] or 0)
+        item = {
+            "subplot_id": row["subplot_id"],
+            "total_deadwood_count": total_count,
+            "standing_deadwood_count": float(row["standing_deadwood_count"] or 0),
+            "fallen_deadwood_count": float(row["fallen_deadwood_count"] or 0),
+            "deadwood_density_per_ha": round(total_count / DEFAULT_SUBPLOT_AREA_HA, 2),
+            "species_count": int(row["species_count"] or 0),
+        }
+        if q and q not in str(item["subplot_id"]):
+            continue
+        items.append(item)
+    items.sort(key=lambda item: (item.get(sort_by) is None, item.get(sort_by)), reverse=order == "desc")
+    return {
+        "status": "success",
+        "source_table": "deadwood_observations",
+        "separate_from_tree_health_status": True,
+        "count": len(items),
+        "items": items[offset_value:offset_value + limit_value],
+        "interpretation_boundary": "\u672c\u5217\u8868\u662f\u67af\u6b7b\u6728\u8c03\u67e5\u8868\u7684\u6837\u65b9\u7edf\u8ba1\uff0c\u4e0d\u4ee3\u8868\u6d3b\u7acb\u6728\u5065\u5eb7\u72b6\u6001\u7edf\u8ba1\u3002",
+    }
 
 
 @app.get("/api/subplots/{subplot_id}/trees", tags=["trees"])

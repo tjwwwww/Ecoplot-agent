@@ -1,39 +1,59 @@
 version: 0.1.0
 name: qilian_forest_data_contract
-说明: >
-  本文件用于对齐业务语义、本体概念、SQLite 事实表字段、Neo4j 知识图谱属性和推荐工具。
-  它不是原始数据，也不是本体替代品；它是智能体进行数据源选择和字段落地的契约。
-principles:
-  - 数量、排行、分布、均值、最大最小值等事实统计，优先使用 SQLite 事实表或已封装确定性工具。
-  - 概念、指标含义、公式依赖、字段含义，优先使用本体和知识注册表。
-  - 实体关系、证据链、知识来源，可使用知识图谱；但不能把本体属性直接当作 Neo4j 物理属性。
-  - Neo4j 查询必须使用本文件声明的 kg_label、kg_property 和 relation_path；未声明时不要猜测。
-  - 工具未命中不等于事实不存在，应根据 data_contract 换用合适数据源验证。
+说明: '本文件用于对齐业务语义、本体概念、SQLite 事实表字段、Neo4j 知识图谱属性和推荐工具。 它不是原始数据，也不是本体替代品；它是智能体进行数据源选择和字段落地的契约。
 
+  '
+principles:
+- 数量、排行、分布、均值、最大最小值等事实统计，优先使用 SQLite 事实表或已封装确定性工具。
+- 概念、指标含义、公式依赖、字段含义，优先使用本体和知识注册表。
+- 实体关系、证据链、知识来源，可使用知识图谱；但不能把本体属性直接当作 Neo4j 物理属性。
+- Neo4j 查询必须使用本文件声明的 kg_label、kg_property 和 relation_path；未声明时不要猜测。
+- 工具未命中不等于事实不存在，应根据 data_contract 换用合适数据源验证。
 entities:
   taxon:
     label_cn: 树种/分类单元
     semantic_class: Taxon
-    aliases: [树种, 物种, 分类单元, 青海云杉, 祁连圆柏, 红桦, 白桦, 山杨, 乌柳, 花楸]
+    aliases:
+    - 树种
+    - 物种
+    - 分类单元
+    - 青海云杉
+    - 祁连圆柏
+    - 红桦
+    - 白桦
+    - 山杨
+    - 乌柳
+    - 花楸
     sqlite:
       primary_table: tree_observations
       primary_field: species
       grain: tree_observation
-      examples: [青海云杉, 祁连圆柏, 红桦, 白桦, 山杨, 乌柳, 花楸]
+      examples:
+      - 青海云杉
+      - 祁连圆柏
+      - 红桦
+      - 白桦
+      - 山杨
+      - 乌柳
+      - 花楸
     kg:
       label: Taxon
       identity_property: taxon_key
       display_property: accepted_name_cn
       scientific_name_property: scientific_name
-      relation_path_from_tree: "(:TreeIndividual)-[:HAS_TAXON]->(:Taxon)"
+      relation_path_from_tree: (:TreeIndividual)-[:HAS_TAXON]->(:Taxon)
       note: TreeObservation 节点默认不保存 species 字段，树种应通过 TreeIndividual 到 Taxon 的关系获取。
     preferred_fact_source: sqlite
-    preferred_fact_tools: [tool_inspect_forest_data, tool_run_forest_analysis_protocol]
-
+    preferred_fact_tools:
+    - tool_inspect_forest_data
+    - tool_run_forest_analysis_protocol
   subplot:
     label_cn: 样方
     semantic_class: Subplot
-    aliases: [样方, 小样方, 样地单元]
+    aliases:
+    - 样方
+    - 小样方
+    - 样地单元
     sqlite:
       primary_table: tree_observations
       primary_field: subplot_id
@@ -41,13 +61,16 @@ entities:
     kg:
       label: Subplot
       identity_property: subplot_id
-      relation_path_to_tree: "(:Subplot)-[:HAS_TREE]->(:TreeIndividual)"
+      relation_path_to_tree: (:Subplot)-[:HAS_TREE]->(:TreeIndividual)
     preferred_fact_source: sqlite
-
   tree_individual:
     label_cn: 单木
     semantic_class: TreeIndividual
-    aliases: [单木, 树木, 个体, 树号]
+    aliases:
+    - 单木
+    - 树木
+    - 个体
+    - 树号
     sqlite:
       primary_table: tree_observations
       primary_field: tree_id
@@ -55,16 +78,55 @@ entities:
     kg:
       label: TreeIndividual
       identity_property: tree_id
-      observation_path: "(:TreeIndividual)-[:HAS_OBSERVATION]->(:TreeObservation)"
-      taxon_path: "(:TreeIndividual)-[:HAS_TAXON]->(:Taxon)"
+      observation_path: (:TreeIndividual)-[:HAS_OBSERVATION]->(:TreeObservation)
+      taxon_path: (:TreeIndividual)-[:HAS_TAXON]->(:Taxon)
     preferred_fact_source: sqlite
-
+  deadwood_observation:
+    label_cn: 枯死木观测
+    semantic_class: DeadwoodObservation
+    aliases:
+    - 枯死木
+    - 死亡木
+    - 死树
+    - 枯立木
+    - 枯倒木
+    - 倒木数量
+    - deadwood
+    sqlite:
+      primary_table: deadwood_observations
+      primary_field: deadwood_id
+      grain: subplot_species_deadwood_summary
+      fields:
+        identity: deadwood_id
+        subplot: subplot_id
+        taxon_name: species
+        total_count: total_count
+        standing_count: standing_count
+        fallen_count: fallen_count
+        remarks: remarks
+    kg:
+      label: DeadwoodObservation
+      available: conditional
+      note: 枯死木事实统计优先使用 SQLite；只有知识图谱明确物化 DeadwoodObservation 节点时才使用 KG。
+    preferred_fact_source: sqlite
+    preferred_fact_tools:
+    - tool_inspect_data_contract
+    - tool_calc_deadwood_metrics
+    boundary:
+    - 枯死木观测来自 deadwood_observations 表。
+    - 不要把 deadwood_observations 与 tree_observations.health_status 混为一谈。
+    - health_status 描述乔木调查表中的单木状态；deadwood_observations 描述枯死木调查记录。
 fields:
   species:
     name_cn: 树种中文名
     semantic_class: Taxon
     semantic_property: accepted_name_cn
-    aliases: [树种, 树名, 物种, 中文名, accepted_name_cn]
+    aliases:
+    - 树种
+    - 树名
+    - 物种
+    - 中文名
+    - accepted_name_cn
     sqlite:
       table: tree_observations
       field: species
@@ -72,63 +134,111 @@ fields:
     kg:
       label: Taxon
       property: accepted_name_cn
-      access_path: "(:TreeIndividual)-[:HAS_TAXON]->(:Taxon)"
+      access_path: (:TreeIndividual)-[:HAS_TAXON]->(:Taxon)
     preferred_source_for_statistics: sqlite
     notes:
-      - SQLite 中字段名是 species。
-      - KG 中不要查询 TreeObservation.species；应通过 Taxon.accepted_name_cn 查询。
-
+    - SQLite 中字段名是 species。
+    - KG 中不要查询 TreeObservation.species；应通过 Taxon.accepted_name_cn 查询。
   tree_dbh_cm:
     name_cn: 胸径
     semantic_class: TreeObservation
     semantic_property: tree_dbh_cm
-    aliases: [胸径, DBH, dbh, 树径]
+    aliases:
+    - 胸径
+    - DBH
+    - dbh
+    - 树径
     unit: cm
-    sqlite: {table: tree_observations, field: tree_dbh_cm, grain: tree_observation}
-    kg: {label: TreeObservation, property: tree_dbh_cm, access_path: "(:TreeIndividual)-[:HAS_OBSERVATION]->(:TreeObservation)"}
+    sqlite:
+      table: tree_observations
+      field: tree_dbh_cm
+      grain: tree_observation
+    kg:
+      label: TreeObservation
+      property: tree_dbh_cm
+      access_path: (:TreeIndividual)-[:HAS_OBSERVATION]->(:TreeObservation)
     preferred_source_for_statistics: sqlite
-
   tree_height_m:
     name_cn: 树高
     semantic_class: TreeObservation
     semantic_property: tree_height_m
-    aliases: [树高, 高度, H, height]
+    aliases:
+    - 树高
+    - 高度
+    - H
+    - height
     unit: m
-    sqlite: {table: tree_observations, field: tree_height_m, grain: tree_observation}
-    kg: {label: TreeObservation, property: tree_height_m, access_path: "(:TreeIndividual)-[:HAS_OBSERVATION]->(:TreeObservation)"}
+    sqlite:
+      table: tree_observations
+      field: tree_height_m
+      grain: tree_observation
+    kg:
+      label: TreeObservation
+      property: tree_height_m
+      access_path: (:TreeIndividual)-[:HAS_OBSERVATION]->(:TreeObservation)
     preferred_source_for_statistics: sqlite
-
   tree_x_m:
     name_cn: 样方内 X 坐标
     semantic_class: TreeObservation
-    aliases: [X坐标, x_m, tree_x_m, 横坐标]
+    aliases:
+    - X坐标
+    - x_m
+    - tree_x_m
+    - 横坐标
     unit: m
-    sqlite: {table: tree_observations, field: tree_x_m, grain: tree_observation}
-    kg: {label: TreeObservation, property: tree_x_m, access_path: "(:TreeIndividual)-[:HAS_OBSERVATION]->(:TreeObservation)"}
+    sqlite:
+      table: tree_observations
+      field: tree_x_m
+      grain: tree_observation
+    kg:
+      label: TreeObservation
+      property: tree_x_m
+      access_path: (:TreeIndividual)-[:HAS_OBSERVATION]->(:TreeObservation)
     preferred_source_for_statistics: sqlite
-
   tree_y_m:
     name_cn: 样方内 Y 坐标
     semantic_class: TreeObservation
-    aliases: [Y坐标, y_m, tree_y_m, 纵坐标]
+    aliases:
+    - Y坐标
+    - y_m
+    - tree_y_m
+    - 纵坐标
     unit: m
-    sqlite: {table: tree_observations, field: tree_y_m, grain: tree_observation}
-    kg: {label: TreeObservation, property: tree_y_m, access_path: "(:TreeIndividual)-[:HAS_OBSERVATION]->(:TreeObservation)"}
+    sqlite:
+      table: tree_observations
+      field: tree_y_m
+      grain: tree_observation
+    kg:
+      label: TreeObservation
+      property: tree_y_m
+      access_path: (:TreeIndividual)-[:HAS_OBSERVATION]->(:TreeObservation)
     preferred_source_for_statistics: sqlite
-
   health_status:
     name_cn: 健康状态
     semantic_class: TreeObservation
-    aliases: [健康, 健康状况, 状态, health_status]
-    sqlite: {table: tree_observations, field: health_status, grain: tree_observation}
-    kg: {label: TreeObservation, property: health_status, access_path: "(:TreeIndividual)-[:HAS_OBSERVATION]->(:TreeObservation)"}
+    aliases:
+    - 健康
+    - 健康状况
+    - 状态
+    - health_status
+    sqlite:
+      table: tree_observations
+      field: health_status
+      grain: tree_observation
+    kg:
+      label: TreeObservation
+      property: health_status
+      access_path: (:TreeIndividual)-[:HAS_OBSERVATION]->(:TreeObservation)
     preferred_source_for_statistics: sqlite
-
   elevation_m:
     name_cn: 单木地形点海拔
     semantic_class: TreeTopographyContext
     semantic_property: elevation_m
-    aliases: [海拔, 高程, elevation, elevation_m]
+    aliases:
+    - 海拔
+    - 高程
+    - elevation
+    - elevation_m
     unit: m
     sqlite:
       table: topography_observations
@@ -143,62 +253,197 @@ fields:
       available: false
       note: 当前 Neo4j 未物化 TreeTopographyContext 节点，地形数值应走 SQLite 或地形工具。
     preferred_source_for_statistics: sqlite
-    preferred_tools: [tool_get_tree_topography_context, tool_get_subplot_topography_summary, tool_run_forest_analysis_protocol]
-
+    preferred_tools:
+    - tool_get_tree_topography_context
+    - tool_get_subplot_topography_summary
+    - tool_run_forest_analysis_protocol
   slope_degree:
     name_cn: 坡度
     semantic_class: TreeTopographyContext
-    aliases: [坡度, slope, slope_degree]
+    aliases:
+    - 坡度
+    - slope
+    - slope_degree
     unit: degree
     sqlite:
       table: topography_observations
       field: slope_degree
       grain: tree
-      join: {left_table: tree_observations, left_key: tree_id, right_table: topography_observations, right_key: tree_id}
-    kg: {available: false}
+      join:
+        left_table: tree_observations
+        left_key: tree_id
+        right_table: topography_observations
+        right_key: tree_id
+    kg:
+      available: false
     preferred_source_for_statistics: sqlite
-
   aspect_degree:
     name_cn: 坡向
     semantic_class: TreeTopographyContext
-    aliases: [坡向, aspect, aspect_degree]
+    aliases:
+    - 坡向
+    - aspect
+    - aspect_degree
     unit: degree
     sqlite:
       table: topography_observations
       field: aspect_degree
       grain: tree
-      join: {left_table: tree_observations, left_key: tree_id, right_table: topography_observations, right_key: tree_id}
-    kg: {available: false}
+      join:
+        left_table: tree_observations
+        left_key: tree_id
+        right_table: topography_observations
+        right_key: tree_id
+    kg:
+      available: false
     preferred_source_for_statistics: sqlite
-
   mean_temperature_c:
     name_cn: 日平均气温
     semantic_class: ClimateObservation
-    aliases: [平均气温, 气温, 温度, mean_temperature_c]
+    aliases:
+    - 平均气温
+    - 气温
+    - 温度
+    - mean_temperature_c
     unit: celsius
-    sqlite: {table: climate_daily_normalized, field: mean_temperature_c, grain: station_day}
-    kg: {available: false}
+    sqlite:
+      table: climate_daily_normalized
+      field: mean_temperature_c
+      grain: station_day
+    kg:
+      available: false
     preferred_source_for_statistics: sqlite
-
   precipitation_mm:
     name_cn: 日降水量
     semantic_class: ClimateObservation
-    aliases: [降水, 降水量, precipitation, precipitation_mm]
+    aliases:
+    - 降水
+    - 降水量
+    - precipitation
+    - precipitation_mm
     unit: mm
-    sqlite: {table: climate_daily_normalized, field: precipitation_mm, grain: station_day}
-    kg: {available: false}
+    sqlite:
+      table: climate_daily_normalized
+      field: precipitation_mm
+      grain: station_day
+    kg:
+      available: false
     preferred_source_for_statistics: sqlite
-
+  deadwood_total_count:
+    name_cn: 枯死木总株数
+    semantic_class: DeadwoodObservation
+    semantic_property: total_count
+    aliases:
+    - 枯死木数量
+    - 死亡木数量
+    - 死树数量
+    - 枯死木总数
+    - total_count
+    unit: 株
+    sqlite:
+      table: deadwood_observations
+      field: total_count
+      grain: subplot_species_deadwood_summary
+    kg:
+      available: false
+    preferred_source_for_statistics: sqlite
+    notes:
+    - 按样方统计时应对 total_count 求和。
+    - 查询全部样方时必须排除 subplot_id = '总计' 的汇总行。
+  deadwood_standing_count:
+    name_cn: 枯立木株数
+    semantic_class: DeadwoodObservation
+    semantic_property: standing_count
+    aliases:
+    - 枯立木
+    - 站立枯死木
+    - standing_count
+    unit: 株
+    sqlite:
+      table: deadwood_observations
+      field: standing_count
+      grain: subplot_species_deadwood_summary
+    kg:
+      available: false
+    preferred_source_for_statistics: sqlite
+  deadwood_fallen_count:
+    name_cn: 枯倒木株数
+    semantic_class: DeadwoodObservation
+    semantic_property: fallen_count
+    aliases:
+    - 枯倒木
+    - 倒木
+    - 倒伏枯死木
+    - fallen_count
+    unit: 株
+    sqlite:
+      table: deadwood_observations
+      field: fallen_count
+      grain: subplot_species_deadwood_summary
+    kg:
+      available: false
+    preferred_source_for_statistics: sqlite
+    notes:
+    - “倒木”在用户问题中可能指 deadwood_observations.fallen_count，也可能指 tree_observations.health_status
+      = “倒木”。
+    - 如果问题是枯死木数量、枯立/枯倒组成，应优先使用 deadwood_observations。
+    - 如果问题是乔木调查表中某株树的状态，应使用 tree_observations.health_status。
+  deadwood_species:
+    name_cn: 枯死木树种
+    semantic_class: DeadwoodObservation
+    semantic_property: species
+    aliases:
+    - 枯死木树种
+    - 死亡木树种
+    - 枯死木组成
+    - species
+    sqlite:
+      table: deadwood_observations
+      field: species
+      grain: subplot_species_deadwood_summary
+    kg:
+      available: false
+    preferred_source_for_statistics: sqlite
 common_query_patterns:
   taxon_topography_ranking:
     label_cn: 按树种统计地形因子并排序
-    examples: [哪个样方的青海云杉海拔最高, 乌柳主要分布在哪些海拔, 青海云杉最高海拔样方]
+    examples:
+    - 哪个样方的青海云杉海拔最高
+    - 乌柳主要分布在哪些海拔
+    - 青海云杉最高海拔样方
     preferred_source: sqlite
-    required_fields: [species, subplot_id, tree_id, elevation_m]
-    join_path: "tree_observations.tree_id = topography_observations.tree_id"
-    operation_template: "filter species -> join topography -> group by subplot_id -> aggregate metric -> order"
+    required_fields:
+    - species
+    - subplot_id
+    - tree_id
+    - elevation_m
+    join_path: tree_observations.tree_id = topography_observations.tree_id
+    operation_template: filter species -> join topography -> group by subplot_id ->
+      aggregate metric -> order
     avoid_kg_patterns:
-      - "(:TreeObservation {species: ...})"
-      - "TreeObservation.species"
-      - "Taxon.chinese_name"
-      - "Taxon.species_name"
+    - '(:TreeObservation {species: ...})'
+    - TreeObservation.species
+    - Taxon.chinese_name
+    - Taxon.species_name
+  subplot_deadwood_summary:
+    label_cn: 按样方统计枯死木情况
+    examples:
+    - 0101样方有多少枯死木
+    - 每个样方死亡木数量
+    - 哪个样方枯死木最多
+    - 枯立木和枯倒木分别是多少
+    preferred_source: sqlite
+    required_fields:
+    - subplot_id
+    - deadwood_total_count
+    - deadwood_standing_count
+    - deadwood_fallen_count
+    - deadwood_species
+    source_table: deadwood_observations
+    operation_template: filter subplot_id if provided -> exclude subplot_id='总计' ->
+      group by subplot_id/species as needed -> sum total_count/standing_count/fallen_count
+      -> order if requested
+    boundary:
+    - 枯死木统计只使用 deadwood_observations。
+    - 不要用 tree_observations.health_status 代替枯死木表。
+    - 乔木健康状态和枯死木调查记录属于不同观测口径。

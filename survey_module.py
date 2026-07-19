@@ -163,12 +163,12 @@ def _gather_health_anomaly_trees(limit: int = 30) -> List[Dict[str, Any]]:
                 health_status, remarks,
                 ROUND(100.0 * tree_height_m / tree_dbh_cm, 2) AS hdr
             FROM tree_observations
-            WHERE (health_status IN ('poor', 'dead')
+            WHERE (health_status IN ('倒木', '病木', '断头木')
                    OR (tree_dbh_cm > 0 AND tree_height_m > 0
                        AND 100.0 * tree_height_m / tree_dbh_cm > 100))
             AND species IS NOT NULL AND TRIM(species) <> ''
             ORDER BY
-                CASE health_status WHEN 'dead' THEN 0 WHEN 'poor' THEN 1 ELSE 2 END,
+                CASE health_status WHEN '倒木' THEN 0 WHEN '病木' THEN 1 WHEN '断头木' THEN 2 ELSE 3 END,
                 hdr DESC
             LIMIT ?
         """, (limit,)).fetchall()
@@ -268,8 +268,12 @@ def _gather_subplot_summary(subplot_ids: Optional[List[str]] = None) -> List[Dic
                 ROUND(AVG(tree_dbh_cm), 1) AS avg_dbh,
                 ROUND(AVG(tree_height_m), 1) AS avg_height,
                 ROUND(AVG(100.0 * tree_height_m / NULLIF(tree_dbh_cm, 0)), 2) AS avg_hdr,
-                SUM(CASE WHEN health_status = 'dead' THEN 1 ELSE 0 END) AS dead_count,
-                SUM(CASE WHEN health_status = 'poor' THEN 1 ELSE 0 END) AS poor_count
+                SUM(CASE WHEN health_status = '__never_match_dead__' THEN 1 ELSE 0 END) AS dead_count,
+                SUM(CASE WHEN health_status = '__never_match_poor__' THEN 1 ELSE 0 END) AS poor_count,
+                SUM(CASE WHEN health_status IN ('倒木', '病木', '断头木') THEN 1 ELSE 0 END) AS health_attention_count,
+                SUM(CASE WHEN health_status = '倒木' THEN 1 ELSE 0 END) AS fallen_status_count,
+                SUM(CASE WHEN health_status = '病木' THEN 1 ELSE 0 END) AS diseased_status_count,
+                SUM(CASE WHEN health_status = '断头木' THEN 1 ELSE 0 END) AS broken_top_status_count
             FROM tree_observations
             {where}
             GROUP BY subplot_id
@@ -871,16 +875,17 @@ def _generate_deterministic_plan(user_request: str, context: Dict[str, Any]) -> 
     for sp in subplots[:5]:
         if len(recommendations) >= 30:
             break
-        dead_pct = round((sp["dead_count"] + sp["poor_count"]) / max(sp["tree_count"], 1) * 100, 1)
-        if dead_pct > 10:
+        attention_count = sp.get("health_attention_count", 0) or 0
+        attention_pct = round(attention_count / max(sp["tree_count"], 1) * 100, 1)
+        if attention_pct > 10:
             recommendations.append({
                 "tree_id": None,
                 "subplot_id": sp["subplot_id"],
                 "species": None,
                 "priority": "medium",
                 "category": "health_check",
-                "reason": f"样地 {sp['subplot_id']} 中异常木比例 {dead_pct}%",
-                "suggested_actions": "整体巡视样地，记录异常现象",
+                "reason": f"?? {sp['subplot_id']} ??????????? {attention_pct}%",
+                "suggested_actions": "??????????????????????????????? deadwood_observations?",
             })
 
     title = "智能生成调查方案"
