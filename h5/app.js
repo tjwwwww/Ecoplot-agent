@@ -1827,9 +1827,9 @@ function renderInlineMarkdown(text) {
 function renderImage(url, alt = "") {
   const safeUrl = normalizeArtifactUrl(String(url || "").trim());
   if (!safeUrl) return "";
-  const caption = alt || "??";
+  const caption = alt || "\u56fe\u8868";
   const escapedUrl = escapeAttribute(safeUrl);
-  return `<figure class="chat-image" data-src="${escapedUrl}"><img src="${escapedUrl}" alt="${escapeAttribute(caption)}" loading="lazy" onerror="this.closest('figure').classList.add('image-load-failed'); this.style.display='none';" /><figcaption>${escapeHtml(caption)}</figcaption><p class="image-error">???????<a href="${escapedUrl}" target="_blank" rel="noopener">??????</a></p></figure>`;
+  return `<figure class="chat-image" data-src="${escapedUrl}"><img src="${escapedUrl}" alt="${escapeAttribute(caption)}" loading="lazy" onerror="this.closest('figure').classList.add('image-load-failed'); this.style.display='none';" /><figcaption>${escapeHtml(caption)}</figcaption><p class="image-error">\u56fe\u7247\u6682\u65f6\u65e0\u6cd5\u52a0\u8f7d\uff0c<a href="${escapedUrl}" target="_blank" rel="noopener">\u70b9\u51fb\u6253\u5f00</a></p></figure>`;
 }
 
 function renderArtifacts(artifacts = []) {
@@ -2199,12 +2199,12 @@ function renderSurveyPlanningMessages() {
 
 function buildSurveyPlanningChatPrompt(userText) {
   return [
-    "????????????????????????????????????????????????",
-    "????????????????????????????????????????????????1-2???????",
-    "????????????/???????????????????????",
-    "????????????????? JSON?",
+    "\u4f60\u662f\u751f\u6001\u91ce\u5916\u8c03\u67e5\u65b9\u6848\u89c4\u5212\u52a9\u624b\u3002\u8bf7\u5148\u7406\u89e3\u8c03\u67e5\u76ee\u7684\uff0c\u518d\u7ed3\u5408\u5df2\u6709\u6837\u5730\u6570\u636e\u63d0\u51fa\u9700\u8981\u6f84\u6e05\u6216\u5efa\u8bae\u7684\u8c03\u67e5\u601d\u8def\u3002",
+    "\u5982\u679c\u4fe1\u606f\u8db3\u591f\uff0c\u8bf7\u7ed9\u51fa\u7b80\u6d01\u5efa\u8bae\uff1b\u5982\u679c\u4fe1\u606f\u4e0d\u8db3\uff0c\u8bf7\u53ea\u8ffd\u95ee1-2\u4e2a\u6700\u5173\u952e\u95ee\u9898\u3002",
+    "\u4e0d\u8981\u76f4\u63a5\u751f\u6210\u5b8c\u6574\u65b9\u6848\uff0c\u9664\u975e\u7528\u6237\u660e\u786e\u8981\u6c42\u751f\u6210\u65b9\u6848\u3002",
+    "\u56de\u7b54\u8981\u9762\u5411\u73b0\u573a\u8c03\u67e5\u4eba\u5458\uff0c\u5177\u4f53\u3001\u53ef\u6267\u884c\u3002",
     "",
-    "???????",
+    "\u7528\u6237\u60f3\u6cd5\uff1a",
     userText,
   ].join("\n");
 }
@@ -2247,16 +2247,16 @@ async function sendSurveyPlanningMessage(event) {
 function buildSurveyPlanRequestFromChat() {
   const transcript = surveyPlanningMessages
     .filter((message) => message.content && !message.content.includes("\u6b63\u5728\u5206\u6790"))
-    .map((message) => `${message.role === "user" ? "??" : "???"}?${message.content}`)
+    .map((message) => `${message.role === "user" ? "\u7528\u6237" : "AI"}\uff1a${message.content}`)
     .join("\n\n");
   return [
-    "## ????????",
-    transcript || "???????????????????",
+    "## \u8c03\u67e5\u9700\u6c42\u5bf9\u8bdd\u8bb0\u5f55",
+    transcript || "\u7528\u6237\u5e0c\u671b\u751f\u6210\u4e00\u4e2a\u91ce\u5916\u8c03\u67e5\u65b9\u6848\u3002",
     "",
-    "## ????",
-    "???????????????????????????",
-    "????????????????????????????????????????????",
-    "???????????????????????????????????????????",
+    "## \u751f\u6210\u8981\u6c42",
+    "\u8bf7\u57fa\u4e8e\u4ee5\u4e0a\u5bf9\u8bdd\u548c\u7cfb\u7edf\u5df2\u6709\u6837\u5730\u6570\u636e\u751f\u6210\u5916\u4e1a\u8c03\u67e5\u65b9\u6848\u3002",
+    "\u65b9\u6848\u5e94\u5305\u542b\u771f\u5b9e\u5b58\u5728\u7684\u6837\u65b9\u6216\u5355\u6728\u3001\u9009\u62e9\u4f9d\u636e\u3001\u73b0\u573a\u6838\u67e5\u52a8\u4f5c\u548c\u4f18\u5148\u7ea7\u3002",
+    "\u4e0d\u8981\u7f16\u9020\u6570\u636e\uff1b\u8bc1\u636e\u4e0d\u8db3\u7684\u5185\u5bb9\u8981\u5199\u6210\u5f85\u6838\u67e5\u4efb\u52a1\u3002",
   ].join("\n");
 }
 
@@ -2533,7 +2533,7 @@ async function loadSurveyList() {
 
 async function deleteSurveyPlan(planId) {
   if (!planId) return;
-  const confirmed = confirm("?????????????????\n\n???????????????????????????????????????????");
+  const confirmed = confirm("\u786e\u5b9a\u5220\u9664\u8fd9\u4e2a\u751f\u6210\u7684\u8c03\u67e5\u65b9\u6848\u5417\uff1f\n\n\u4f1a\u5220\u9664\u65b9\u6848\u3001\u65b9\u6848\u4efb\u52a1\u548c\u8be5\u65b9\u6848\u751f\u6210\u7684\u62a5\u544a\u6587\u4ef6\uff0c\u4f46\u4e0d\u4f1a\u5220\u9664\u539f\u59cb\u6837\u5730\u3001\u5355\u6728\u3001\u6c14\u5019\u6216\u5730\u5f62\u6570\u636e\u3002");
   if (!confirmed) return;
 
   try {
@@ -2542,7 +2542,7 @@ async function deleteSurveyPlan(planId) {
     });
     const data = await resp.json().catch(() => ({}));
     if (!resp.ok || data.status !== "success") {
-      alert("?????" + (data.detail || data.message || resp.status));
+      alert("\u5220\u9664\u5931\u8d25\uff1a" + (data.detail || data.message || resp.status));
       return;
     }
     if (String(currentPlanId) === String(planId)) {
@@ -2554,7 +2554,7 @@ async function deleteSurveyPlan(planId) {
     }
     await loadSurveyList();
   } catch (err) {
-    alert("?????" + err.message);
+    alert("\u5220\u9664\u5931\u8d25\uff1a" + err.message);
   }
 }
 
