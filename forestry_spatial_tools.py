@@ -45,7 +45,12 @@ def _repair_mojibake_text(value):
 
 
 BASE_DIR = os.path.dirname(os.path.abspath(__file__))
-DB_PATH = os.path.join(BASE_DIR, "data", "qilian_forest.db")
+try:
+    from dotenv import load_dotenv
+    load_dotenv(os.path.join(BASE_DIR, ".env"))
+except Exception:
+    pass
+DB_PATH = os.path.abspath(os.getenv("FORESTRY_SQLITE_DB", os.path.join(BASE_DIR, "data", "qilian_forest.db")))
 # 真实 Excel 大表路径（包含乔木每木调查数据及 6 张二元材积查算表）
 EXCEL_PATH = r"E:\Project_Participate\东盟人工智能创新大赛\data\祁连山国家公园乔木林样地数据资料汇总\祁连山国家公园森林生态系统乔木林样地调查汇总表.xlsx"
 if not os.path.exists(EXCEL_PATH):

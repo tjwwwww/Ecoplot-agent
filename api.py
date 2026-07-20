@@ -2432,11 +2432,17 @@ def survey_generate_report(
     """Generate the survey report. Default is agent analysis, not template fallback."""
     try:
         result = svm.generate_report(plan_id, formats=formats, mode=mode, allow_fallback=allow_fallback)
-        if result.get("status") != "success":
-            status_code = 404 if result.get("status") == "not_found" else 400
-            raise HTTPException(status_code=status_code, detail=result.get("message", "Survey report generation failed"))
         files = result.get("files") or {}
         result["file_urls"] = {fmt: f"/reports/{filename}" for fmt, filename in files.items() if filename}
+
+        if result.get("status") == "not_found":
+            raise HTTPException(status_code=404, detail=result.get("message", "Survey plan not found"))
+
+        # 智能体报告失败属于业务状态，不应该变成不可诊断的 500。
+        # 前端可据此显示错误原因，并提供“改用模板报告”的按钮。
+        if result.get("status") != "success":
+            return result
+
         return result
     except HTTPException:
         raise

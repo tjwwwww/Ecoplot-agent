@@ -2408,7 +2408,7 @@ function initSurveyEventListeners() {
       if (data.status === "success") {
         showSurveyReport(data);
       } else {
-        alert("生成报告失败: " + (data.message || ""));
+        alert("\u751f\u6210\u62a5\u544a\u5931\u8d25: " + (data.message || data.detail || data.report_mode || resp.status));
       }
     } catch (err) {
       alert("网络错误: " + err.message);

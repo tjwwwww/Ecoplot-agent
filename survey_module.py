@@ -21,8 +21,13 @@ from pathlib import Path
 from typing import Any, Dict, List, Optional, Tuple
 
 BASE_DIR = Path(__file__).resolve().parent
+try:
+    from dotenv import load_dotenv
+    load_dotenv(BASE_DIR / ".env")
+except Exception:
+    pass
 DATA_DIR = BASE_DIR / "data"
-DB_PATH = DATA_DIR / "qilian_forest.db"
+DB_PATH = Path(os.getenv("FORESTRY_SQLITE_DB", str(DATA_DIR / "qilian_forest.db"))).expanduser().resolve()
 REPORT_DIR = BASE_DIR / "reports"
 
 # =============================================================================
@@ -118,6 +123,8 @@ def _dict_factory(cursor: sqlite3.Cursor, row: sqlite3.Row) -> dict:
 
 
 def _get_conn() -> sqlite3.Connection:
+    if not DB_PATH.exists():
+        raise FileNotFoundError(f"SQLite database not found: {DB_PATH}")
     conn = sqlite3.connect(DB_PATH)
     conn.row_factory = _dict_factory
     return conn
@@ -384,7 +391,7 @@ def _generate_site_analysis_with_agent(snapshot: Dict[str, Any]) -> Optional[str
             session_id="survey_site_brief_cache",
             client_id="survey_site_brief",
             context={"current_page": "survey_site_brief", "context_policy": "auto"},
-            options={"max_tool_rounds": 4, "history_limit": 0},
+            options={"max_tool_rounds": 0, "history_limit": 0},
         )
         answer = str(result.get("answer") or "").strip()
         return answer or None
@@ -1423,39 +1430,49 @@ def _build_survey_report_evidence_package(
     }
 
 
+_LAST_SURVEY_AGENT_REPORT_ERROR = ""
+
+
+def _set_survey_agent_report_error(message: str) -> None:
+    global _LAST_SURVEY_AGENT_REPORT_ERROR
+    _LAST_SURVEY_AGENT_REPORT_ERROR = str(message or "").strip()[:1000]
+
+
 def _generate_survey_report_with_agent(evidence_package: _ReportDict[str, _ReportAny]) -> _ReportOptional[str]:
+    _set_survey_agent_report_error("")
     try:
         from agent import run_agent_chat
-    except Exception:
+    except Exception as exc:
+        _set_survey_agent_report_error(f"无法导入 agent.run_agent_chat: {exc}")
         return None
 
     payload = _report_json.dumps(evidence_package, ensure_ascii=False, default=str)
     prompt = f"""
-You are an ecological field-survey reporting agent. Generate a Markdown report from the evidence package.
+你是生态野外调查报告智能体。请根据下面的证据包生成一份 Markdown 调查报告。
 
-Important: this is NOT a fixed template filling task. First infer what kind of report is appropriate from the plan, execution status, field observations, and available evidence. Then organize the report accordingly.
+这不是固定模板填空任务。你需要先理解调查方案、执行状态、现场记录和已有证据，再决定报告结构。
 
-Rules:
-1. Use only facts in the evidence package. Do not invent field observations, photos, quantities, species, locations, or conclusions.
-2. Separate four evidence levels: database facts, generated survey-plan rationale, field observations, and unresolved items.
-3. If field observations are sparse, make the report a "pre-survey / task plan interpretation" report instead of pretending it is a completed field report.
-4. If field observations are sufficient, summarize actual findings first, then list remaining gaps.
-5. Choose headings dynamically. Do not force every report into the same section order.
-6. Use concise tables only when they improve readability. Do not dump every raw task into the main body; put detailed lists in an appendix if needed.
-7. Do not make causal claims when evidence only supports screening or association. Use wording such as "needs verification", "attention signal", "comparison target", or "insufficient evidence".
-8. The whole report must be written in Simplified Chinese.
-9. Output Markdown only. No JSON. No code fences.
+要求：
+1. 只能使用证据包中的事实，不得编造现场记录、照片、数量、树种、位置或结论。
+2. 区分数据库事实、方案生成依据、现场观察记录、尚未解决的问题。
+3. 如果现场记录较少，报告应定位为“调查前方案解读/任务说明”，不要伪装成已完成调查报告。
+4. 如果现场记录较充分，先总结实际发现，再列出剩余问题。
+5. 标题和章节可以根据内容动态组织，不要强行套固定目录。
+6. 表格只在提高可读性时使用；不要把全部原始任务堆在正文，可放入附录。
+7. 证据只支持筛查或关联时，不要写因果结论；使用“需核查”“关注信号”“对比对象”“证据不足”等表述。
+8. 全文使用简体中文。
+9. 只输出 Markdown，不要输出 JSON，不要使用代码块。
 
-The report should normally include, when relevant:
-- A clear title.
-- Why this survey plan exists.
-- What data has already been recorded.
-- What the current evidence supports.
-- What remains unknown.
-- Practical next-step field actions.
-- An appendix with task or observation details when useful.
+通常可以包含：
+- 报告标题；
+- 本次调查方案为何生成；
+- 已有数据和现场记录情况；
+- 当前证据能够支持什么；
+- 仍然未知或需要补采什么；
+- 下一步现场行动建议；
+- 必要时附任务或记录明细。
 
-Evidence package JSON:
+证据包 JSON：
 ```json
 {payload}
 ```
@@ -1467,14 +1484,16 @@ Evidence package JSON:
             session_id=f"survey_report_{evidence_package.get('plan', {}).get('plan_id', 'unknown')}",
             client_id="survey_report_generator",
             context={"current_page": "survey_report", "report_mode": True, "context_policy": "auto"},
-            options={"max_tool_rounds": 4, "history_limit": 0},
+            options={"max_tool_rounds": 0, "history_limit": 0},
         )
-    except TypeError:
+    except TypeError as exc:
         try:
             result = run_agent_chat(prompt)
-        except Exception:
+        except Exception as inner_exc:
+            _set_survey_agent_report_error(f"run_agent_chat 兼容调用失败: {inner_exc}; 原始 TypeError: {exc}")
             return None
-    except Exception:
+    except Exception as exc:
+        _set_survey_agent_report_error(f"run_agent_chat 调用失败: {exc}")
         return None
 
     if isinstance(result, dict):
@@ -1483,8 +1502,10 @@ Evidence package JSON:
         answer = str(result) if result is not None else ""
     answer = (answer or "").strip()
     if not answer:
+        _set_survey_agent_report_error("智能体返回为空。")
         return None
     if len(answer) < 120 or "#" not in answer:
+        _set_survey_agent_report_error(f"智能体返回内容不像完整 Markdown 报告，长度={len(answer)}。")
         return None
     return answer
 
@@ -1821,7 +1842,7 @@ def generate_report(plan_id: int, formats: _ReportAny = None, mode: str = "agent
     export_result = _export_survey_report_files(path, formats=formats)
 
     stats = evidence_package.get("execution_stats") or {}
-    with _survey_conn() as conn:
+    with _get_conn() as conn:
         conn.execute(
             """
             UPDATE field_survey_plans
