@@ -2268,7 +2268,10 @@ async function generateSurveyPlanFromChat() {
     return;
   }
   const button = dom.surveyGenerateFromChat;
+  const originalButtonHtml = button ? button.innerHTML : "";
   if (button) button.disabled = true;
+  if (button) button.innerHTML = '<i data-lucide="loader-2" class="spin-icon"></i> \u6b63\u5728\u751f\u6210\u65b9\u6848...';
+  renderIcons();
   try {
     const resp = await fetch("/api/survey/plan", {
       method: "POST",
@@ -2285,6 +2288,8 @@ async function generateSurveyPlanFromChat() {
     alert("\u7f51\u7edc\u9519\u8bef\uff1a" + err.message);
   } finally {
     if (button) button.disabled = false;
+    if (button) button.innerHTML = originalButtonHtml;
+    renderIcons();
   }
 }
 

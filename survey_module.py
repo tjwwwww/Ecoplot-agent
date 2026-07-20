@@ -1851,7 +1851,7 @@ def generate_report(plan_id: int, formats: _ReportAny = None, mode: str = "agent
             """,
             (
                 f"\u62a5\u544a\u5df2\u751f\u6210\uff1a{filename}\uff1b\u751f\u6210\u6a21\u5f0f\uff1a{report_mode}\uff1b\u73b0\u573a\u8bb0\u5f55 {stats.get('field_observation_count', 0)} \u6761\u3002",
-                _now_text(),
+                datetime.now().strftime("%Y-%m-%d %H:%M:%S"),
                 plan_id,
             ),
         )
