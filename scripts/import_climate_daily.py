@@ -20,15 +20,10 @@ from typing import Any, Dict, Iterable, List, Optional
 
 BASE_DIR = os.path.dirname(os.path.dirname(os.path.abspath(__file__)))
 DB_PATH = os.path.join(BASE_DIR, "data", "qilian_forest.db")
-ROOT_DIR = os.path.normpath(os.path.join(
-    BASE_DIR,
-    "..",
-    "..",
-    "data",
-    "??????????????????",
-    "????",
-    "????????",
-))
+ROOT_DIR = os.environ.get(
+    "CLIMATE_DATA_ROOT",
+    os.path.join(BASE_DIR, "data", "climate_daily_raw"),
+)
 RAW_TABLE_NAME = "climate_daily_observations"
 NORMALIZED_TABLE_NAME = "climate_daily_normalized"
 STATION_TABLE_NAME = "climate_stations"
@@ -310,7 +305,7 @@ def discover_station_files(root: str) -> List[Path]:
         for candidate in sorted(year_path.iterdir()):
             if candidate.suffix.lower() not in {".csv", ".xls", ".xlsx"}:
                 continue
-            if "????" in candidate.name or "??" in candidate.name:
+            if candidate.name.startswith("~$"):
                 continue
             station_files.append(candidate)
     return station_files

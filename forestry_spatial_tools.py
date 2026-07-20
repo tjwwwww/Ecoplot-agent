@@ -757,14 +757,14 @@ def tool_calc_volume_metrics(subplot_id: str) -> str:
 # ==============================================================================
 def tool_calc_deadwood_metrics(subplot_id: str) -> str:
     """
-    ?????????????????????????????????????????
+    Calculate deadwood-related subplot metrics.
 
-    ????????? deadwood_observations???? tree_observations.health_status?
-    ??????????/??/????????????????????????????????
+    Prefer deadwood_observations. If the table is absent, return not_available.
+    This tool reports observed statistics only and does not infer causes.
     """
     subplot_id = str(subplot_id).strip()
     if not os.path.exists(DB_PATH):
-        return json.dumps({"status": "error", "error": f"????????: {DB_PATH}"}, ensure_ascii=False)
+        return json.dumps({"status": "error", "error": f"\u6570\u636e\u5e93\u4e0d\u5b58\u5728: {DB_PATH}"}, ensure_ascii=False)
 
     conn = sqlite3.connect(DB_PATH)
     conn.row_factory = sqlite3.Row
@@ -777,7 +777,7 @@ def tool_calc_deadwood_metrics(subplot_id: str) -> str:
         return json.dumps({
             "status": "not_available",
             "subplot_id": subplot_id,
-            "message": "?????? deadwood_observations ???????",
+            "message": "\u5f53\u524d\u6570\u636e\u5e93\u7f3a\u5c11 deadwood_observations \u8868\uff0c\u6682\u4e0d\u80fd\u8ba1\u7b97\u67af\u6b7b\u6728\u6307\u6807",
             "source_table": "deadwood_observations",
         }, ensure_ascii=False)
 

@@ -117,6 +117,12 @@ app.mount(
     name="visualizations",
 )
 
+app.mount(
+    "/reports",
+    StaticFiles(directory=str(REPORT_DIR)),
+    name="reports",
+)
+
 # 测试网页目录：访问 http://127.0.0.1:8000/web/chat.html
 app.mount(
     "/web",
@@ -2293,8 +2299,32 @@ def survey_get_plan(plan_id: int) -> Dict[str, Any]:
     """获取方案详情（含所有建议）"""
     try:
         result = svm.get_plan(plan_id)
-        if result["status"] == "error":
-            raise HTTPException(status_code=404, detail=result["message"])
+        if result.get("status") != "success":
+            raise HTTPException(status_code=404, detail=result.get("message", "Survey report generation failed"))
+        return result
+    except HTTPException:
+        raise
+    except Exception as exc:
+        raise HTTPException(status_code=500, detail=str(exc))
+
+
+@app.delete("/api/survey/plans/{plan_id}", tags=["survey"])
+def survey_delete_plan(
+    plan_id: int,
+    permanent: bool = Query(default=True, description="Delete generated plan records permanently. Raw ecological data is never deleted."),
+    delete_reports: bool = Query(default=True, description="Also remove generated report files for this plan."),
+    reason: str = Query(default="", description="Optional reason when permanent=false."),
+) -> Dict[str, Any]:
+    """Delete a generated survey plan. Original ecological data is never deleted."""
+    try:
+        if permanent:
+            result = svm.purge_survey_plan(plan_id, delete_reports=delete_reports)
+        else:
+            result = svm.delete_survey_plan(plan_id, reason=reason)
+        if result.get("status") == "not_found":
+            raise HTTPException(status_code=404, detail=result.get("message", "Survey plan not found"))
+        if result.get("status") != "success":
+            raise HTTPException(status_code=400, detail=result.get("message", "Survey plan deletion failed"))
         return result
     except HTTPException:
         raise
@@ -2363,6 +2393,25 @@ def survey_plan_observations(plan_id: int) -> Dict[str, Any]:
         raise HTTPException(status_code=500, detail=str(exc))
 
 
+@app.delete("/api/survey/recommendations/{rec_id}", tags=["survey"])
+def survey_delete_recommendation(
+    rec_id: int,
+    delete_observation: bool = Query(default=True, description="Also delete field observation tied to this generated task."),
+) -> Dict[str, Any]:
+    """Remove one generated tree/task from a survey plan. Original tree data is never deleted."""
+    try:
+        result = svm.delete_survey_recommendation(rec_id, delete_observation=delete_observation)
+        if result.get("status") == "not_found":
+            raise HTTPException(status_code=404, detail=result.get("message", "Survey recommendation not found"))
+        if result.get("status") != "success":
+            raise HTTPException(status_code=400, detail=result.get("message", "Survey recommendation deletion failed"))
+        return result
+    except HTTPException:
+        raise
+    except Exception as exc:
+        raise HTTPException(status_code=500, detail=str(exc))
+
+
 @app.put("/api/survey/recommendations/{rec_id}/status", tags=["survey"])
 def survey_update_rec_status(rec_id: int, status: str = Query(...)) -> Dict[str, Any]:
     """更新单条建议状态: pending / completed / skipped"""
@@ -2374,12 +2423,41 @@ def survey_update_rec_status(rec_id: int, status: str = Query(...)) -> Dict[str,
 
 
 @app.post("/api/survey/plans/{plan_id}/report", tags=["survey"])
-def survey_generate_report(plan_id: int) -> Dict[str, Any]:
-    """生成方案调查报告"""
+def survey_generate_report(
+    plan_id: int,
+    formats: str = Query(default="md", description="Report generation formats. Default md only."),
+    mode: str = Query(default="agent", description="Report mode: agent/template/auto."),
+    allow_fallback: bool = Query(default=False, description="Allow auto mode to fall back to template report."),
+) -> Dict[str, Any]:
+    """Generate the survey report. Default is agent analysis, not template fallback."""
     try:
-        result = svm.generate_report(plan_id)
-        if result["status"] == "error":
-            raise HTTPException(status_code=404, detail=result["message"])
+        result = svm.generate_report(plan_id, formats=formats, mode=mode, allow_fallback=allow_fallback)
+        if result.get("status") != "success":
+            status_code = 404 if result.get("status") == "not_found" else 400
+            raise HTTPException(status_code=status_code, detail=result.get("message", "Survey report generation failed"))
+        files = result.get("files") or {}
+        result["file_urls"] = {fmt: f"/reports/{filename}" for fmt, filename in files.items() if filename}
+        return result
+    except HTTPException:
+        raise
+    except Exception as exc:
+        raise HTTPException(status_code=500, detail=str(exc))
+
+
+@app.post("/api/survey/reports/{report_file}/export", tags=["survey"])
+def survey_export_report(
+    report_file: str,
+    formats: str = Query(..., description="Comma-separated export formats: docx,pdf"),
+) -> Dict[str, Any]:
+    """Export an existing Markdown survey report to docx/pdf on demand."""
+    try:
+        result = svm.export_existing_report(report_file, formats=formats)
+        if result.get("status") == "not_found":
+            raise HTTPException(status_code=404, detail=result.get("message", "Report file not found"))
+        if result.get("status") == "error":
+            raise HTTPException(status_code=400, detail=result.get("message", "Report export failed"))
+        files = result.get("files") or {}
+        result["file_urls"] = {fmt: f"/reports/{filename}" for fmt, filename in files.items() if filename}
         return result
     except HTTPException:
         raise

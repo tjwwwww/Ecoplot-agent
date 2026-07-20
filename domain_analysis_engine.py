@@ -205,7 +205,7 @@ def _fetch_tree_rows(conn: sqlite3.Connection, where: str = "1=1", params: Tuple
 def _load_subplot_topography_context(conn: sqlite3.Connection, subplot_ids: Sequence[str]) -> Dict[str, Any]:
     subplot_ids = [str(x).strip() for x in subplot_ids if str(x).strip()]
     if not subplot_ids:
-        return {"status": "not_available", "message": "??????"}
+        return {"status": "not_available", "message": "\u672a\u63d0\u4f9b\u6837\u65b9\u7f16\u53f7"}
     results: List[Dict[str, Any]] = []
     for sid in subplot_ids[:200]:
         try:

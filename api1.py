@@ -134,8 +134,8 @@ def verify_api_key(x_api_key: Optional[str] = Header(default=None)) -> bool:
 # =============================================================================
 
 class FormulaExecuteRequest(BaseModel):
-    knowledge_id: str = Field(..., min_length=1, description="??ID??? F_STAND_DENSITY")
-    context_json: Dict[str, Any] = Field(default_factory=dict, description="??????")
+    knowledge_id: str = Field(..., min_length=1, description="\u516c\u5f0f\u6216\u77e5\u8bc6 ID\uff0c\u4f8b\u5982 F_STAND_DENSITY")
+    context_json: Dict[str, Any] = Field(default_factory=dict, description="\u8ba1\u7b97\u4e0a\u4e0b\u6587\u53c2\u6570")
 
 
 class AgentPageContext(BaseModel):
@@ -612,9 +612,9 @@ def _agent_scope(context: Dict[str, Any]) -> str:
 def _compose_agent_question(question: str, context: Dict[str, Any]) -> str:
     if not context:
         return question
-    lines = ["[???????????"]
+    lines = ["[\u5f53\u524d\u4f1a\u8bdd\u4e0a\u4e0b\u6587]"]
     lines.extend(f"- {k}: {v}" for k, v in context.items() if v not in (None, "", [], {}))
-    return "\n".join(lines + ["[??????]", question])
+    return "\n".join(lines + ["[\u7528\u6237\u95ee\u9898]", question])
 
 
 def _resolve_agent_context(payload: AgentChatRequest) -> Tuple[Dict[str, Any], str, str]:
@@ -1188,7 +1188,7 @@ def agent_chat_stream(payload: AgentChatRequest, authorized: bool = Depends(veri
 
 
 # =============================================================================
-# ????????
+# Formula execution API
 # =============================================================================
 
 @app.post("/api/inspection/tasks/generate", tags=["inspection"])
