@@ -114,6 +114,14 @@ def init_survey_db() -> None:
             conn.execute("ALTER TABLE field_survey_plans ADD COLUMN deleted_at TEXT")
         if "delete_reason" not in existing_columns:
             conn.execute("ALTER TABLE field_survey_plans ADD COLUMN delete_reason TEXT")
+        if "latest_report_text" not in existing_columns:
+            conn.execute("ALTER TABLE field_survey_plans ADD COLUMN latest_report_text TEXT")
+        if "latest_report_file" not in existing_columns:
+            conn.execute("ALTER TABLE field_survey_plans ADD COLUMN latest_report_file TEXT")
+        if "latest_report_mode" not in existing_columns:
+            conn.execute("ALTER TABLE field_survey_plans ADD COLUMN latest_report_mode TEXT")
+        if "latest_report_generated_at" not in existing_columns:
+            conn.execute("ALTER TABLE field_survey_plans ADD COLUMN latest_report_generated_at TEXT")
         conn.commit()
 
 
@@ -936,6 +944,21 @@ def _get_plan_full(plan_id: int) -> Optional[Dict[str, Any]]:
 
     result = dict(plan)
     result["recommendations"] = recommendations
+    if not result.get("latest_report_text"):
+        report_candidates = sorted(
+            REPORT_DIR.glob(f"survey_report_{plan_id}_*.md"),
+            key=lambda file_path: file_path.stat().st_mtime if file_path.exists() else 0,
+            reverse=True,
+        )
+        if report_candidates:
+            latest_path = report_candidates[0]
+            try:
+                result["latest_report_text"] = latest_path.read_text(encoding="utf-8")
+                result["latest_report_file"] = latest_path.name
+                result["latest_report_mode"] = result.get("latest_report_mode") or "file"
+                result["latest_report_generated_at"] = result.get("latest_report_generated_at") or datetime.fromtimestamp(latest_path.stat().st_mtime).strftime("%Y-%m-%d %H:%M:%S")
+            except OSError:
+                pass
     return {"status": "success", "plan": result}
 
 
@@ -1443,36 +1466,39 @@ def _generate_survey_report_with_agent(evidence_package: _ReportDict[str, _Repor
     try:
         from agent import run_agent_chat
     except Exception as exc:
-        _set_survey_agent_report_error(f"无法导入 agent.run_agent_chat: {exc}")
+        _set_survey_agent_report_error(f"cannot import agent.run_agent_chat: {exc}")
         return None
 
     payload = _report_json.dumps(evidence_package, ensure_ascii=False, default=str)
     prompt = f"""
-你是生态野外调查报告智能体。请根据下面的证据包生成一份 Markdown 调查报告。
+You are a field ecological survey report agent. Generate one Markdown report from the evidence package.
 
-这不是固定模板填空任务。你需要先理解调查方案、执行状态、现场记录和已有证据，再决定报告结构。
+The report MUST use this four-part structure. Do not add other main sections except an optional appendix table.
+Each main section title should be concise, about four Chinese characters:
 
-要求：
-1. 只能使用证据包中的事实，不得编造现场记录、照片、数量、树种、位置或结论。
-2. 区分数据库事实、方案生成依据、现场观察记录、尚未解决的问题。
-3. 如果现场记录较少，报告应定位为“调查前方案解读/任务说明”，不要伪装成已完成调查报告。
-4. 如果现场记录较充分，先总结实际发现，再列出剩余问题。
-5. 标题和章节可以根据内容动态组织，不要强行套固定目录。
-6. 表格只在提高可读性时使用；不要把全部原始任务堆在正文，可放入附录。
-7. 证据只支持筛查或关联时，不要写因果结论；使用“需核查”“关注信号”“对比对象”“证据不足”等表述。
-8. 全文使用简体中文。
-9. 只输出 Markdown，不要输出 JSON，不要使用代码块。
+# \u91ce\u5916\u8c03\u67e5\u62a5\u544a
 
-通常可以包含：
-- 报告标题；
-- 本次调查方案为何生成；
-- 已有数据和现场记录情况；
-- 当前证据能够支持什么；
-- 仍然未知或需要补采什么；
-- 下一步现场行动建议；
-- 必要时附任务或记录明细。
+## \u4e00\u3001\u4efb\u52a1\u6982\u51b5
+Explain why this plan was generated, user objective, task count, completion status, and data basis.
 
-证据包 JSON：
+## \u4e8c\u3001\u5bf9\u8c61\u6e05\u5355
+Summarize selected subplots/trees/species by priority. Use a compact table when it improves readability.
+
+## \u4e09\u3001\u73b0\u573a\u8bb0\u5f55
+If field observations exist, summarize actual observations first. If observations are sparse or absent, clearly state that this is a pre-survey/task-plan report and list what should be recorded on site.
+
+## \u56db\u3001\u540e\u7eed\u5efa\u8bae
+Give next field actions, missing data, review points, and boundaries. Do not make causal claims unless the evidence package directly supports them.
+
+Rules:
+1. Use only facts in the evidence package. Do not invent observations, photos, counts, species, locations, or conclusions.
+2. Distinguish database facts, generated-plan rationale, field observations, and unresolved questions.
+3. If evidence only supports screening or association, use wording such as \"\u9700\u6838\u67e5\", \"\u5173\u6ce8\u4fe1\u53f7\", \"\u5bf9\u6bd4\u5bf9\u8c61\", or \"\u8bc1\u636e\u4e0d\u8db3\".
+4. Use Simplified Chinese.
+5. Output Markdown only. Do not output JSON. Do not use code blocks.
+6. Keep the report readable for field staff and managers; avoid dumping all raw records into the body.
+
+Evidence package JSON:
 ```json
 {payload}
 ```
@@ -1490,10 +1516,10 @@ def _generate_survey_report_with_agent(evidence_package: _ReportDict[str, _Repor
         try:
             result = run_agent_chat(prompt)
         except Exception as inner_exc:
-            _set_survey_agent_report_error(f"run_agent_chat 兼容调用失败: {inner_exc}; 原始 TypeError: {exc}")
+            _set_survey_agent_report_error(f"run_agent_chat compatibility call failed: {inner_exc}; original TypeError: {exc}")
             return None
     except Exception as exc:
-        _set_survey_agent_report_error(f"run_agent_chat 调用失败: {exc}")
+        _set_survey_agent_report_error(f"run_agent_chat failed: {exc}")
         return None
 
     if isinstance(result, dict):
@@ -1502,10 +1528,11 @@ def _generate_survey_report_with_agent(evidence_package: _ReportDict[str, _Repor
         answer = str(result) if result is not None else ""
     answer = (answer or "").strip()
     if not answer:
-        _set_survey_agent_report_error("智能体返回为空。")
+        _set_survey_agent_report_error("agent returned empty report")
         return None
-    if len(answer) < 120 or "#" not in answer:
-        _set_survey_agent_report_error(f"智能体返回内容不像完整 Markdown 报告，长度={len(answer)}。")
+    required_sections = ["\u4efb\u52a1\u6982\u51b5", "\u5bf9\u8c61\u6e05\u5355", "\u73b0\u573a\u8bb0\u5f55", "\u540e\u7eed\u5efa\u8bae"]
+    if len(answer) < 120 or "#" not in answer or not all(section in answer for section in required_sections):
+        _set_survey_agent_report_error(f"agent report does not match four-section Markdown template; length={len(answer)}")
         return None
     return answer
 
@@ -1516,19 +1543,18 @@ def _generate_survey_report_fallback(evidence_package: _ReportDict[str, _ReportA
     tasks = evidence_package.get("tasks") or []
     data_snapshot = site_brief.get("data_snapshot") or {}
     analysis_text = site_brief.get("analysis_text") or ""
+    observed_tasks = [task for task in tasks if task.get("field_observation")]
 
     lines = [
-        "# \u91ce\u5916\u8c03\u67e5\u7efc\u5408\u62a5\u544a",
+        "# \u91ce\u5916\u8c03\u67e5\u62a5\u544a",
         "",
         f"**\u751f\u6210\u65f6\u95f4**\uff1a{_report_datetime.now().strftime('%Y-%m-%d %H:%M:%S')}",
         f"**\u8c03\u67e5\u65b9\u6848**\uff1a{_survey_report_value(plan.get('title'))}",
-        f"**\u7528\u6237\u9700\u6c42**\uff1a{_survey_report_value(plan.get('user_request'))}",
         "",
-        "## \u4e00\u3001\u8c03\u67e5\u6982\u51b5",
+        "## \u4e00\u3001\u4efb\u52a1\u6982\u51b5",
         "",
-        f"\u672c\u6b21\u62a5\u544a\u57fa\u4e8e\u8c03\u67e5\u65b9\u6848\u3001\u667a\u80fd\u4f53\u63a8\u8350\u4efb\u52a1\u548c\u73b0\u573a\u8bb0\u5f55\u81ea\u52a8\u751f\u6210\u3002\u65b9\u6848\u5171\u5305\u542b {stats.get('total_tasks', 0)} \u9879\u8c03\u67e5\u4efb\u52a1\uff0c\u5df2\u5f62\u6210 {stats.get('field_observation_count', 0)} \u6761\u73b0\u573a\u8bb0\u5f55\u3002\u62a5\u544a\u91cd\u70b9\u8bf4\u660e\u6837\u5730\u8ba4\u8bc6\u3001\u8c03\u67e5\u6267\u884c\u3001\u4e3b\u8981\u53d1\u73b0\u548c\u540e\u7eed\u5efa\u8bae\u3002",
-        "",
-        "## \u4e8c\u3001\u6837\u5730\u7279\u5f81",
+        f"\u672c\u6b21\u62a5\u544a\u57fa\u4e8e\u8c03\u67e5\u65b9\u6848\u3001\u667a\u80fd\u4f53\u63a8\u8350\u4efb\u52a1\u548c\u73b0\u573a\u8bb0\u5f55\u751f\u6210\u3002\u65b9\u6848\u5171\u5305\u542b {stats.get('total_tasks', 0)} \u9879\u4efb\u52a1\uff0c\u5df2\u5b8c\u6210 {stats.get('completed_tasks', 0)} \u9879\uff0c\u5f85\u5b8c\u6210 {stats.get('pending_tasks', 0)} \u9879\uff0c\u5df2\u5f62\u6210 {stats.get('field_observation_count', 0)} \u6761\u73b0\u573a\u8bb0\u5f55\u3002",
+        f"\u7528\u6237\u9700\u6c42\uff1a{_survey_report_value(plan.get('user_request'))}",
         "",
     ]
 
@@ -1541,69 +1567,51 @@ def _generate_survey_report_fallback(evidence_package: _ReportDict[str, _ReportA
             f"- \u6811\u79cd\u6570\u91cf\uff1a{_survey_report_value(data_snapshot.get('species_count'))}",
             "",
         ])
-    else:
-        lines.extend(["\u6837\u5730\u603b\u4f53\u6458\u8981\u6682\u672a\u751f\u6210\uff0c\u5efa\u8bae\u5148\u5237\u65b0\u6837\u5730\u8ba4\u77e5\u6458\u8981\u540e\u518d\u751f\u6210\u6b63\u5f0f\u62a5\u544a\u3002", ""])
 
     lines.extend([
-        "## \u4e09\u3001\u6267\u884c\u60c5\u51b5",
+        "## \u4e8c\u3001\u5bf9\u8c61\u6e05\u5355",
         "",
         _survey_report_value(plan.get("ai_analysis"), "\u672c\u65b9\u6848\u7531\u667a\u80fd\u4f53\u6839\u636e\u7528\u6237\u9700\u6c42\u548c\u5df2\u6709\u6837\u5730\u6570\u636e\u751f\u6210\u3002"),
         "",
-        "| \u6307\u6807 | \u6570\u91cf |",
-        "|---|---:|",
-        f"| \u63a8\u8350\u8c03\u67e5\u4efb\u52a1 | {stats.get('total_tasks', 0)} |",
-        f"| \u5df2\u5b8c\u6210\u4efb\u52a1 | {stats.get('completed_tasks', 0)} |",
-        f"| \u5f85\u7ee7\u7eed\u6838\u67e5\u4efb\u52a1 | {stats.get('pending_tasks', 0)} |",
-        f"| \u73b0\u573a\u8bb0\u5f55 | {stats.get('field_observation_count', 0)} |",
-        "",
-        "## \u56db\u3001\u8c03\u67e5\u53d1\u73b0",
-        "",
+        "| \u5e8f\u53f7 | \u5bf9\u8c61 | \u6837\u65b9 | \u4f18\u5148\u7ea7 | \u63a8\u8350\u7406\u7531 |",
+        "|---:|---|---|---|---|",
     ])
+    for index, task in enumerate(tasks[:30], start=1):
+        target = _survey_report_value(task.get("target_name") or task.get("target_id"))
+        lines.append(
+            f"| {index} | {target} | {_survey_report_value(task.get('subplot_id'))} | "
+            f"{_survey_report_value(task.get('priority'))} | {_survey_report_value(task.get('reason'))} |"
+        )
+    lines.append("")
 
-    observed_tasks = [task for task in tasks if task.get("field_observation")]
+    lines.extend(["## \u4e09\u3001\u73b0\u573a\u8bb0\u5f55", ""])
     if observed_tasks:
         for task in observed_tasks[:12]:
             obs = task.get("field_observation") or {}
             lines.extend([
                 f"### {_survey_report_value(task.get('target_name') or task.get('target_id'))}",
-                "",
-                f"- \u63a8\u8350\u7406\u7531\uff1a{_survey_report_value(task.get('reason'))}",
-                f"- \u5efa\u8bae\u52a8\u4f5c\uff1a{_survey_report_value(task.get('suggested_action'))}",
                 f"- \u73b0\u573a\u72b6\u6001\uff1a{_survey_report_value(obs.get('health_status'))}",
                 f"- \u73b0\u573a\u8bb0\u5f55\uff1a{_survey_report_value(obs.get('notes'))}",
+                f"- \u5efa\u8bae\u52a8\u4f5c\uff1a{_survey_report_value(task.get('suggested_action'))}",
                 "",
             ])
     else:
         lines.extend([
-            "\u5f53\u524d\u5c1a\u672a\u8bb0\u5f55\u8db3\u591f\u7684\u73b0\u573a\u89c2\u5bdf\u4fe1\u606f\uff0c\u56e0\u6b64\u4e3b\u8981\u53d1\u73b0\u4ecd\u4ee5\u667a\u80fd\u4f53\u63a8\u8350\u7406\u7531\u548c\u6570\u636e\u5e93\u80cc\u666f\u4e3a\u4e3b\u3002",
-            "\u5efa\u8bae\u5b8c\u6210\u91cd\u70b9\u5bf9\u8c61\u6838\u67e5\u540e\u91cd\u65b0\u751f\u6210\u62a5\u544a\u3002",
+            "\u5f53\u524d\u5c1a\u672a\u8bb0\u5f55\u8db3\u591f\u7684\u73b0\u573a\u89c2\u5bdf\u4fe1\u606f\uff0c\u56e0\u6b64\u8be5\u62a5\u544a\u5b9a\u4f4d\u4e3a\u8c03\u67e5\u524d\u4efb\u52a1\u8bf4\u660e\u3002",
+            "\u73b0\u573a\u5e94\u91cd\u70b9\u8bb0\u5f55\u5bf9\u8c61\u662f\u5426\u5b58\u5728\u3001\u6811\u52bf\u548c\u5065\u5eb7\u72b6\u6001\u3001\u5f02\u5e38\u73b0\u8c61\u3001\u7167\u7247\u6216\u4f4d\u7f6e\u8bf4\u660e\u3002",
             "",
         ])
 
     lines.extend([
-        "## \u4e94\u3001\u7814\u5224\u5efa\u8bae",
+        "## \u56db\u3001\u540e\u7eed\u5efa\u8bae",
         "",
         "- \u5bf9\u5df2\u5b8c\u6210\u8bb0\u5f55\u7684\u4efb\u52a1\uff0c\u5e94\u7ed3\u5408\u73b0\u573a\u5907\u6ce8\u3001\u7167\u7247\u548c\u6570\u636e\u5e93\u6307\u6807\u8fdb\u884c\u590d\u6838\u3002",
         "- \u5bf9\u672a\u5b8c\u6210\u7684\u91cd\u70b9\u4efb\u52a1\uff0c\u5e94\u4fdd\u7559\u5728\u540e\u7eed\u8c03\u67e5\u6e05\u5355\u4e2d\u7ee7\u7eed\u6838\u67e5\u3002",
-        "- \u5bf9\u8bc1\u636e\u4e0d\u8db3\u7684\u95ee\u9898\uff0c\u4e0d\u76f4\u63a5\u5f62\u6210\u539f\u56e0\u5224\u65ad\uff0c\u5e94\u8f6c\u5316\u4e3a\u8865\u6d4b\u5b57\u6bb5\u6216\u590d\u6d4b\u4efb\u52a1\u3002",
+        "- \u8bc1\u636e\u4e0d\u8db3\u65f6\u4e0d\u76f4\u63a5\u5f62\u6210\u539f\u56e0\u5224\u65ad\uff0c\u800c\u662f\u8f6c\u5316\u4e3a\u8865\u6d4b\u5b57\u6bb5\u6216\u590d\u6d4b\u4efb\u52a1\u3002",
         "- \u5efa\u8bae\u8c03\u67e5\u7ed3\u675f\u540e\u518d\u6b21\u751f\u6210\u62a5\u544a\uff0c\u7528\u5b8c\u6574\u73b0\u573a\u8bb0\u5f55\u66f4\u65b0\u6837\u5730\u8ba4\u8bc6\u3002",
         "",
-        "## \u9644\u5f55",
-        "",
-        "| \u5e8f\u53f7 | \u5bf9\u8c61 | \u6837\u65b9 | \u4f18\u5148\u7ea7 | \u63a8\u8350\u7406\u7531 | \u73b0\u573a\u8bb0\u5f55 |",
-        "|---:|---|---|---|---|---|",
+        "*\u62a5\u544a\u7531 ForestryAgent \u91ce\u5916\u8c03\u67e5\u6a21\u5757\u81ea\u52a8\u751f\u6210\u3002*",
     ])
-
-    for index, task in enumerate(tasks, start=1):
-        obs = task.get("field_observation") or {}
-        target = _survey_report_value(task.get("target_name") or task.get("target_id"))
-        lines.append(
-            f"| {index} | {target} | {_survey_report_value(task.get('subplot_id'))} | "
-            f"{_survey_report_value(task.get('priority'))} | {_survey_report_value(task.get('reason'))} | "
-            f"{_survey_report_value(obs.get('notes'))} |"
-        )
-
-    lines.extend(["", "*\u62a5\u544a\u7531 ForestryAgent \u91ce\u5916\u8c03\u67e5\u6a21\u5757\u81ea\u52a8\u751f\u6210\u3002*"])
     return "\n".join(lines)
 
 
@@ -1846,11 +1854,20 @@ def generate_report(plan_id: int, formats: _ReportAny = None, mode: str = "agent
         conn.execute(
             """
             UPDATE field_survey_plans
-            SET summary = ?, updated_at = ?
+            SET summary = ?,
+                latest_report_text = ?,
+                latest_report_file = ?,
+                latest_report_mode = ?,
+                latest_report_generated_at = ?,
+                updated_at = ?
             WHERE plan_id = ?
             """,
             (
                 f"\u62a5\u544a\u5df2\u751f\u6210\uff1a{filename}\uff1b\u751f\u6210\u6a21\u5f0f\uff1a{report_mode}\uff1b\u73b0\u573a\u8bb0\u5f55 {stats.get('field_observation_count', 0)} \u6761\u3002",
+                report_text,
+                filename,
+                report_mode,
+                datetime.now().strftime("%Y-%m-%d %H:%M:%S"),
                 datetime.now().strftime("%Y-%m-%d %H:%M:%S"),
                 plan_id,
             ),

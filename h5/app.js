@@ -2411,6 +2411,11 @@ function initSurveyEventListeners() {
       });
       const data = await resp.json();
       if (data.status === "success") {
+        if (currentSurveyPlan) {
+          currentSurveyPlan.latest_report_text = data.report || "";
+          currentSurveyPlan.latest_report_file = data.report_file || data.files?.md || "";
+          currentSurveyPlan.latest_report_mode = data.report_mode || "agent";
+        }
         showSurveyReport(data);
       } else {
         alert("\u751f\u6210\u62a5\u544a\u5931\u8d25: " + (data.message || data.detail || data.report_mode || resp.status));
@@ -2667,6 +2672,24 @@ async function openSurveyPlan(planId) {
     ensureSurveyRevisePanel();
     renderSurveyRecs(recs);
     renderSurveyDetailChatMessages();
+    const oldReport = document.querySelector(".survey-report-view");
+    if (oldReport) oldReport.remove();
+    if (plan.latest_report_text) {
+      showSurveyReport({
+        status: "success",
+        plan_id: plan.plan_id,
+        report: plan.latest_report_text,
+        report_file: plan.latest_report_file,
+        report_mode: plan.latest_report_mode || "saved",
+        files: plan.latest_report_file ? { md: plan.latest_report_file } : {},
+        file_urls: plan.latest_report_file ? { md: `/reports/${encodeURIComponent(plan.latest_report_file)}` } : {},
+        stats: {
+          total_tasks: total,
+          completed_tasks: completed,
+          pending_tasks: Math.max(total - completed, 0),
+        },
+      });
+    }
 
     switchView("survey");
   } catch (err) {
@@ -2903,48 +2926,85 @@ function showSurveyReport(data) {
   const report = data.report || "";
   const stats = data.stats || {};
   const reportMode = data.report_mode || "unknown";
+  const files = data.files || {};
+  const fileUrls = data.file_urls || {};
+  const reportFile = data.report_file || files.md || "";
   const totalTasks = Number(stats.total_tasks ?? stats.total ?? 0);
   const completedTasks = Number(stats.completed_tasks ?? stats.completed ?? 0);
   const pendingTasks = Number(stats.pending_tasks ?? Math.max(totalTasks - completedTasks - Number(stats.skipped || 0), 0));
   const completionRate = totalTasks > 0 ? Math.round((completedTasks / totalTasks) * 1000) / 10 : Number(stats.completion_rate || 0);
 
   const modeHtml = `
-    <div style="margin-bottom:10px;padding:8px 10px;border-radius:8px;background:#f4f7f5;color:var(--muted);font-size:12px;">
-      \u751f\u6210\u6a21\u5f0f\uff1a${escapeHtml(reportMode)}
+    <div class="survey-report-meta">
+      <span>\u751f\u6210\u6a21\u5f0f\uff1a${escapeHtml(reportMode)}</span>
+      ${reportFile ? `<span>\u6587\u4ef6\uff1a${escapeHtml(reportFile)}</span>` : ""}
     </div>
   `;
 
   const statsHtml = `
-    <div style="display:grid;grid-template-columns:repeat(3,1fr);gap:8px;margin-bottom:14px;">
-      <div style="padding:10px;border-radius:8px;background:#edf6f1;text-align:center;">
-        <div style="font-size:24px;font-weight:750;color:var(--green-800);">${completedTasks}</div>
-        <div style="font-size:12px;color:var(--muted);">\u5df2\u5b8c\u6210</div>
-      </div>
-      <div style="padding:10px;border-radius:8px;background:#fff2e7;text-align:center;">
-        <div style="font-size:24px;font-weight:750;color:var(--warning);">${pendingTasks}</div>
-        <div style="font-size:12px;color:var(--muted);">\u5f85\u5b8c\u6210</div>
-      </div>
-      <div style="padding:10px;border-radius:8px;background:#e8f4ee;text-align:center;">
-        <div style="font-size:24px;font-weight:750;color:#3d8b63;">${completionRate}%</div>
-        <div style="font-size:12px;color:var(--muted);">\u5b8c\u6210\u7387</div>
-      </div>
+    <div class="survey-report-stats">
+      <div><strong>${completedTasks}</strong><span>\u5df2\u5b8c\u6210</span></div>
+      <div><strong>${pendingTasks}</strong><span>\u5f85\u5b8c\u6210</span></div>
+      <div><strong>${completionRate}%</strong><span>\u5b8c\u6210\u7387</span></div>
     </div>
   `;
-  // 在报告按钮上方插入报告内容
+
+  const mdUrl = fileUrls.md || (reportFile ? `/reports/${encodeURIComponent(reportFile)}` : "");
+  const actionsHtml = `
+    <div class="survey-report-actions">
+      ${mdUrl ? `<a class="survey-report-link" href="${escapeAttribute(mdUrl)}" target="_blank" rel="noopener">\u6253\u5f00 Markdown</a>` : ""}
+      <button type="button" class="survey-report-export" data-format="docx" data-report-file="${escapeAttribute(reportFile)}">\u5bfc\u51fa Word</button>
+      <button type="button" class="survey-report-export" data-format="pdf" data-report-file="${escapeAttribute(reportFile)}">\u5bfc\u51fa PDF</button>
+    </div>
+  `;
+
   const reportHtml = `
     <div class="survey-report-view">
       ${modeHtml}
       ${statsHtml}
-      <pre style="white-space:pre-wrap;font-family:inherit;margin:0;">${escapeHtml(report)}</pre>
+      ${actionsHtml}
+      <div class="survey-report-content">${renderMarkdown(report)}</div>
     </div>
   `;
 
-  // 移除旧的报告视图
   const oldReport = document.querySelector(".survey-report-view");
   if (oldReport) oldReport.remove();
 
   dom.surveyReportBtn.insertAdjacentHTML("beforebegin", reportHtml);
-  dom.surveyReportBtn.textContent = "📄 重新生成报告";
+  dom.surveyReportBtn.textContent = "\uD83D\uDCC4 \u91cd\u65b0\u751f\u6210\u62a5\u544a";
+  bindSurveyReportExportButtons();
+}
+
+function bindSurveyReportExportButtons() {
+  document.querySelectorAll(".survey-report-export").forEach((button) => {
+    button.addEventListener("click", async () => {
+      const reportFile = button.dataset.reportFile || "";
+      const format = button.dataset.format || "";
+      if (!reportFile || !format) return;
+      const originalText = button.textContent;
+      button.disabled = true;
+      button.textContent = "\u6b63\u5728\u5bfc\u51fa...";
+      try {
+        const resp = await fetch(`/api/survey/reports/${encodeURIComponent(reportFile)}/export?formats=${encodeURIComponent(format)}`, { method: "POST" });
+        const data = await resp.json().catch(() => ({}));
+        if (!resp.ok || !["success", "partial_success"].includes(data.status)) {
+          alert("\u5bfc\u51fa\u5931\u8d25: " + (data.message || data.detail || resp.status));
+          return;
+        }
+        const url = data.file_urls?.[format];
+        if (url) {
+          window.open(url, "_blank", "noopener");
+        } else {
+          alert("\u5bfc\u51fa\u5b8c\u6210\uff0c\u4f46\u672a\u8fd4\u56de\u6587\u4ef6\u94fe\u63a5\u3002");
+        }
+      } catch (err) {
+        alert("\u5bfc\u51fa\u5931\u8d25: " + err.message);
+      } finally {
+        button.disabled = false;
+        button.textContent = originalText;
+      }
+    });
+  });
 }
 
 // ---- 工具函数 ----
