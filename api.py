@@ -2451,6 +2451,35 @@ def survey_generate_report(
         raise HTTPException(status_code=500, detail=str(exc))
 
 
+@app.post("/api/survey/reports/comprehensive", tags=["survey"])
+def survey_generate_comprehensive_report(
+    payload: Dict[str, Any] = Body(default_factory=dict),
+    formats: str = Query(default="md", description="Report generation formats. Default md only."),
+    mode: str = Query(default="agent", description="Report mode: agent/template/auto."),
+    allow_fallback: bool = Query(default=True, description="Allow fallback to template report."),
+    audience: str = Query(default="leader", description="Report audience: technical/leader."),
+) -> Dict[str, Any]:
+    """Generate an integrated survey report from selected plans/subplots."""
+    try:
+        result = svm.generate_comprehensive_report(
+            plan_ids=payload.get("plan_ids"),
+            subplot_ids=payload.get("subplot_ids"),
+            formats=formats,
+            mode=mode,
+            allow_fallback=allow_fallback,
+            audience=audience,
+        )
+        files = result.get("files") or {}
+        result["file_urls"] = {fmt: f"/reports/{filename}" for fmt, filename in files.items() if filename}
+        if result.get("status") == "not_found":
+            raise HTTPException(status_code=404, detail=result.get("message", "No survey tasks found"))
+        return result
+    except HTTPException:
+        raise
+    except Exception as exc:
+        raise HTTPException(status_code=500, detail=str(exc))
+
+
 @app.post("/api/survey/reports/{report_file}/export", tags=["survey"])
 def survey_export_report(
     report_file: str,

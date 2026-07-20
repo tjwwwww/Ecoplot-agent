@@ -2514,21 +2514,33 @@ async function loadSurveyList() {
       dom.surveyList.innerHTML = `<div class="survey-empty">暂无调查方案，点击上方按钮新建</div>`;
       return;
     }
-    dom.surveyList.innerHTML = plans.map(p => {
+    dom.surveyList.innerHTML = `
+      <div class="survey-summary-toolbar">
+        <div class="survey-summary-title">\u9009\u62e9\u65b9\u6848\u751f\u6210\u7efc\u5408\u62a5\u544a</div>
+        <input class="survey-summary-subplots" id="surveyComprehensiveSubplots" placeholder="\u53ef\u9009\uff1a\u53ea\u7eb3\u5165\u6307\u5b9a\u6837\u65b9\uff0c\u5982 0101,0318" />
+        <div class="survey-summary-actions">
+          <button type="button" id="surveyComprehensiveReportBtn" data-audience="technical">\u7efc\u5408\u8be6\u7ec6\u62a5\u544a</button>
+          <button type="button" id="surveyComprehensiveBriefBtn" data-audience="leader">\u7efc\u5408\u9886\u5bfc\u7b80\u62a5</button>
+        </div>
+      </div>
+    ` + plans.map(p => {
       const statusClass = p.status || "draft";
-      const statusLabel = {draft: "草稿", active: "进行中", completed: "已完成", cancelled: "已取消"}[statusClass] || statusClass;
+      const statusLabel = {draft: "\u8349\u7a3f", active: "\u8fdb\u884c\u4e2d", completed: "\u5df2\u5b8c\u6210", cancelled: "\u5df2\u53d6\u6d88"}[statusClass] || statusClass;
       const desc = (p.summary || p.ai_analysis || "").slice(0, 80);
       return `
         <div class="survey-card" data-plan-id="${p.plan_id}">
           <div class="survey-card-head">
-            <span class="survey-card-title">${escapeHtml(p.title || "未命名方案")}</span>
+            <label class="survey-plan-select-wrap" title="\u52a0\u5165\u7efc\u5408\u62a5\u544a">
+              <input type="checkbox" class="survey-plan-select" value="${p.plan_id}" />
+              <span class="survey-card-title">${escapeHtml(p.title || "\u672a\u547d\u540d\u65b9\u6848")}</span>
+            </label>
             <span class="survey-card-status ${statusClass}">${statusLabel}</span>
           </div>
           <div class="survey-card-meta">
-            <span>🌳 ${p.tree_count || 0} 株</span>
-            <span>📍 ${p.subplot_count || 0} 样地</span>
-            <span>✅ ${p.completed_count || 0}/${p.tree_count || 0}</span>
-            <span>📅 ${p.created_at || ""}</span>
+            <span>?? ${p.tree_count || 0} ?</span>
+            <span>?? ${p.subplot_count || 0} ??</span>
+            <span>? ${p.completed_count || 0}/${p.tree_count || 0}</span>
+            <span>?? ${p.created_at || ""}</span>
           </div>
           ${desc ? `<div class="survey-card-desc">${escapeHtml(desc)}</div>` : ""}
           <div class="survey-card-actions">
@@ -2547,6 +2559,13 @@ async function loadSurveyList() {
         openSurveyPlan(pid);
       });
     });
+    dom.surveyList.querySelectorAll(".survey-plan-select").forEach(input => {
+      input.addEventListener("click", (event) => event.stopPropagation());
+    });
+    const comprehensiveBtn = dom.surveyList.querySelector("#surveyComprehensiveReportBtn");
+    const comprehensiveBriefBtn = dom.surveyList.querySelector("#surveyComprehensiveBriefBtn");
+    comprehensiveBtn?.addEventListener("click", () => generateComprehensiveSurveyReport("technical", comprehensiveBtn));
+    comprehensiveBriefBtn?.addEventListener("click", () => generateComprehensiveSurveyReport("leader", comprehensiveBriefBtn));
     dom.surveyList.querySelectorAll(".survey-card-delete").forEach(button => {
       button.addEventListener("click", async (event) => {
         event.stopPropagation();
@@ -2561,6 +2580,81 @@ async function loadSurveyList() {
 
 // ---- 打开方案详情 ----
 
+
+function parseCommaSeparatedIds(text) {
+  return String(text || "")
+    .split(/[\s,?;?]+/)
+    .map((item) => item.trim())
+    .filter(Boolean);
+}
+
+async function generateComprehensiveSurveyReport(audience = "leader", triggerButton = null) {
+  const selected = Array.from(dom.surveyList.querySelectorAll(".survey-plan-select:checked"))
+    .map((input) => Number(input.value))
+    .filter(Boolean);
+  if (!selected.length) {
+    alert("\u8bf7\u5148\u52fe\u9009\u81f3\u5c11\u4e00\u4e2a\u8c03\u67e5\u65b9\u6848\u3002");
+    return;
+  }
+  const button = triggerButton;
+  const originalText = button ? button.textContent : "";
+  if (button) {
+    button.disabled = true;
+    button.textContent = audience === "leader" ? "\u6b63\u5728\u751f\u6210\u7b80\u62a5..." : "\u6b63\u5728\u751f\u6210\u62a5\u544a...";
+  }
+  try {
+    const params = new URLSearchParams({ mode: "agent", allow_fallback: "true", audience });
+    const resp = await fetch(`/api/survey/reports/comprehensive?${params.toString()}`, {
+      method: "POST",
+      headers: { "content-type": "application/json" },
+      body: JSON.stringify({
+        plan_ids: selected,
+        subplot_ids: parseCommaSeparatedIds(dom.surveyList.querySelector("#surveyComprehensiveSubplots")?.value || ""),
+      }),
+    });
+    const data = await resp.json().catch(() => ({}));
+    if (data.status !== "success") {
+      alert("\u751f\u6210\u7efc\u5408\u62a5\u544a\u5931\u8d25: " + (data.message || data.detail || resp.status));
+      return;
+    }
+    showSurveyHomeReport(data);
+  } catch (err) {
+    alert("\u7f51\u7edc\u9519\u8bef: " + err.message);
+  } finally {
+    if (button) {
+      button.disabled = false;
+      button.textContent = originalText;
+    }
+  }
+}
+
+function showSurveyHomeReport(data) {
+  const old = document.querySelector("#surveyComprehensiveReportView");
+  if (old) old.remove();
+  const report = data.report || "";
+  const files = data.files || {};
+  const fileUrls = data.file_urls || {};
+  const reportFile = data.report_file || files.md || "";
+  const mdUrl = fileUrls.md || (reportFile ? `/reports/${encodeURIComponent(reportFile)}` : "");
+  const wrapper = document.createElement("div");
+  wrapper.id = "surveyComprehensiveReportView";
+  wrapper.className = "survey-report-view survey-comprehensive-report-view";
+  wrapper.innerHTML = `
+    <div class="survey-report-meta">
+      <span>\u7efc\u5408\u62a5\u544a\uff1a${escapeHtml(data.report_audience || "")}</span>
+      ${reportFile ? `<span>\u6587\u4ef6\uff1a${escapeHtml(reportFile)}</span>` : ""}
+    </div>
+    <div class="survey-report-actions">
+      ${mdUrl ? `<a class="survey-report-link" href="${escapeAttribute(mdUrl)}" target="_blank" rel="noopener">\u6253\u5f00 Markdown</a>` : ""}
+      <button type="button" class="survey-report-export" data-format="docx" data-report-file="${escapeAttribute(reportFile)}">\u5bfc\u51fa Word</button>
+      <button type="button" class="survey-report-export" data-format="pdf" data-report-file="${escapeAttribute(reportFile)}">\u5bfc\u51fa PDF</button>
+    </div>
+    <div class="survey-report-content">${renderMarkdown(report)}</div>
+  `;
+  dom.surveyList.parentElement.insertBefore(wrapper, dom.surveyList);
+  bindSurveyReportExportButtons();
+  wrapper.scrollIntoView({ behavior: "smooth", block: "start" });
+}
 
 async function deleteSurveyPlan(planId) {
   if (!planId) return;

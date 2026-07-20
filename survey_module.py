@@ -1730,6 +1730,15 @@ def _normalize_report_formats(formats: _ReportAny = None) -> _ReportList[str]:
     return normalized or ["md"]
 
 
+
+def _markdown_plain_text(text: _ReportAny) -> str:
+    value = "" if text is None else str(text)
+    value = _report_re.sub(r"!\[([^\]]*)\]\([^)]*\)", r"\1", value)
+    value = _report_re.sub(r"\[([^\]]+)\]\([^)]*\)", r"\1", value)
+    value = value.replace("**", "").replace("__", "").replace("`", "")
+    value = _report_re.sub(r"<[^>]+>", "", value)
+    return value.strip()
+
 def _markdown_cells(line: str) -> _ReportList[str]:
     return [cell.strip() for cell in line.strip().strip("|").split("|")]
 
@@ -1756,11 +1765,11 @@ def _convert_markdown_to_docx(markdown_path: Path, output_path: Path) -> _Report
             index += 1
             continue
         if stripped.startswith("### "):
-            doc.add_heading(stripped[4:].strip(), level=3)
+            doc.add_heading(_markdown_plain_text(stripped[4:]), level=3)
         elif stripped.startswith("## "):
-            doc.add_heading(stripped[3:].strip(), level=2)
+            doc.add_heading(_markdown_plain_text(stripped[3:]), level=2)
         elif stripped.startswith("# "):
-            doc.add_heading(stripped[2:].strip(), level=1)
+            doc.add_heading(_markdown_plain_text(stripped[2:]), level=1)
         elif stripped.startswith("|") and stripped.endswith("|"):
             table_lines = []
             while index < len(lines) and lines[index].strip().startswith("|") and lines[index].strip().endswith("|"):
@@ -1774,12 +1783,12 @@ def _convert_markdown_to_docx(markdown_path: Path, output_path: Path) -> _Report
                 table.style = "Table Grid"
                 for row_idx, row in enumerate(rows):
                     for col_idx in range(col_count):
-                        table.cell(row_idx, col_idx).text = row[col_idx] if col_idx < len(row) else ""
+                        table.cell(row_idx, col_idx).text = _markdown_plain_text(row[col_idx]) if col_idx < len(row) else ""
             continue
         elif stripped.startswith(('- ', '* ', '+ ')):
-            doc.add_paragraph(stripped[2:].strip(), style="List Bullet")
+            doc.add_paragraph(_markdown_plain_text(stripped[2:]), style="List Bullet")
         else:
-            doc.add_paragraph(stripped)
+            doc.add_paragraph(_markdown_plain_text(stripped))
         index += 1
     doc.save(str(output_path))
     return {"status": "success", "file": output_path.name}
@@ -1820,18 +1829,18 @@ def _convert_markdown_to_pdf(markdown_path: Path, output_path: Path) -> _ReportD
             index += 1
             continue
         if stripped.startswith("### "):
-            story.append(Paragraph(xml_escape(stripped[4:].strip()), h3))
+            story.append(Paragraph(xml_escape(_markdown_plain_text(stripped[4:])), h3))
         elif stripped.startswith("## "):
-            story.append(Paragraph(xml_escape(stripped[3:].strip()), h2))
+            story.append(Paragraph(xml_escape(_markdown_plain_text(stripped[3:])), h2))
         elif stripped.startswith("# "):
-            story.append(Paragraph(xml_escape(stripped[2:].strip()), h1))
+            story.append(Paragraph(xml_escape(_markdown_plain_text(stripped[2:])), h1))
         elif stripped.startswith("|") and stripped.endswith("|"):
             table_lines = []
             while index < len(lines) and lines[index].strip().startswith("|") and lines[index].strip().endswith("|"):
                 if not _is_markdown_separator(lines[index]):
                     table_lines.append(lines[index])
                 index += 1
-            rows = [[Paragraph(xml_escape(cell), normal) for cell in _markdown_cells(row)] for row in table_lines]
+            rows = [[Paragraph(xml_escape(_markdown_plain_text(cell)), normal) for cell in _markdown_cells(row)] for row in table_lines]
             if rows:
                 table = Table(rows, repeatRows=1)
                 table.setStyle(TableStyle([
@@ -1843,9 +1852,9 @@ def _convert_markdown_to_pdf(markdown_path: Path, output_path: Path) -> _ReportD
                 story.append(Spacer(1, 0.2 * cm))
             continue
         elif stripped.startswith(('- ', '* ', '+ ')):
-            story.append(Paragraph(xml_escape(f"- {stripped[2:].strip()}"), normal))
+            story.append(Paragraph(xml_escape(f"? {_markdown_plain_text(stripped[2:])}"), normal))
         else:
-            story.append(Paragraph(xml_escape(stripped), normal))
+            story.append(Paragraph(xml_escape(_markdown_plain_text(stripped)), normal))
         index += 1
 
     doc = SimpleDocTemplate(str(output_path), pagesize=A4, leftMargin=1.8*cm, rightMargin=1.8*cm, topMargin=1.6*cm, bottomMargin=1.6*cm)
@@ -1900,6 +1909,253 @@ def export_existing_report(report_file: str, formats: _ReportAny) -> _ReportDict
         "message": "; ".join(f"{fmt}: {errors.get(fmt, 'export file was not created')}" for fmt in missing) if missing else "",
     }
 
+
+
+def _normalize_id_list(values: _ReportAny) -> _ReportList[str]:
+    if values is None:
+        return []
+    if isinstance(values, str):
+        raw = [part.strip() for part in values.replace("?", ",").split(",")]
+    elif isinstance(values, (list, tuple, set)):
+        raw = [str(item).strip() for item in values]
+    else:
+        raw = [str(values).strip()]
+    return [item for item in raw if item]
+
+
+def _build_comprehensive_report_evidence(plan_ids: _ReportAny = None, subplot_ids: _ReportAny = None) -> _ReportDict[str, _ReportAny]:
+    selected_plan_ids = [int(x) for x in _normalize_id_list(plan_ids) if str(x).strip().isdigit()]
+    selected_subplot_ids = set(_normalize_id_list(subplot_ids))
+    plans = []
+    if selected_plan_ids:
+        for pid in selected_plan_ids:
+            result = get_plan(pid)
+            if result.get("status") == "success" and result.get("plan"):
+                plans.append(result["plan"])
+    else:
+        for plan in list_plans(limit=200).get("plans", []):
+            result = get_plan(int(plan.get("plan_id")))
+            if result.get("status") == "success" and result.get("plan"):
+                plans.append(result["plan"])
+
+    compact_plans = []
+    all_tasks = []
+    for plan in plans:
+        recs = plan.get("recommendations") or []
+        if selected_subplot_ids:
+            recs = [rec for rec in recs if str(rec.get("subplot_id") or "") in selected_subplot_ids]
+        if not recs and selected_subplot_ids:
+            continue
+        observations_result = get_plan_observations(int(plan.get("plan_id")))
+        observations = observations_result.get("observations", []) if isinstance(observations_result, dict) else []
+        obs_by_rec = {obs.get("rec_id"): obs for obs in observations if obs.get("rec_id") is not None}
+        compact_recs = []
+        for rec in recs:
+            obs = obs_by_rec.get(rec.get("rec_id"))
+            compact = {
+                "plan_id": plan.get("plan_id"),
+                "rec_id": rec.get("rec_id"),
+                "target_type": rec.get("target_type"),
+                "target_id": rec.get("target_id"),
+                "target_name": rec.get("target_name"),
+                "subplot_id": rec.get("subplot_id"),
+                "species": rec.get("species"),
+                "priority": rec.get("priority"),
+                "category": rec.get("category"),
+                "reason": rec.get("reason"),
+                "suggested_action": rec.get("suggested_action"),
+                "status": rec.get("status"),
+                "field_observation": obs,
+            }
+            compact_recs.append(compact)
+            all_tasks.append(compact)
+        compact_plans.append({
+            "plan_id": plan.get("plan_id"),
+            "title": plan.get("title"),
+            "user_request": plan.get("user_request"),
+            "ai_analysis": plan.get("ai_analysis"),
+            "status": plan.get("status"),
+            "created_at": plan.get("created_at"),
+            "task_count": len(compact_recs),
+        })
+
+    subplot_set = sorted({str(task.get("subplot_id")) for task in all_tasks if task.get("subplot_id")})
+    species_set = sorted({str(task.get("species")) for task in all_tasks if task.get("species")})
+    completed = [task for task in all_tasks if str(task.get("status") or "").lower() in {"done", "completed", "finished", "\u5df2\u5b8c\u6210"} or task.get("field_observation")]
+    priority_counts: _ReportDict[str, int] = {}
+    category_counts: _ReportDict[str, int] = {}
+    for task in all_tasks:
+        priority = _survey_report_value(task.get("priority"), "\u672a\u5206\u7ea7")
+        category = _survey_report_value(task.get("category"), "\u672a\u5206\u7c7b")
+        priority_counts[priority] = priority_counts.get(priority, 0) + 1
+        category_counts[category] = category_counts.get(category, 0) + 1
+    return {
+        "scope": {
+            "selected_plan_ids": selected_plan_ids,
+            "selected_subplot_ids": sorted(selected_subplot_ids),
+            "actual_plan_count": len(compact_plans),
+            "actual_subplot_count": len(subplot_set),
+            "actual_species_count": len(species_set),
+        },
+        "plans": compact_plans,
+        "tasks": all_tasks[:300],
+        "summary_stats": {
+            "total_tasks": len(all_tasks),
+            "completed_tasks": len(completed),
+            "pending_tasks": max(len(all_tasks) - len(completed), 0),
+            "field_observation_count": len([task for task in all_tasks if task.get("field_observation")]),
+            "subplot_ids": subplot_set[:100],
+            "species": species_set[:100],
+            "priority_counts": priority_counts,
+            "category_counts": category_counts,
+        },
+    }
+
+
+def _generate_comprehensive_report_fallback(evidence: _ReportDict[str, _ReportAny], audience: str = "leader") -> str:
+    audience = _normalize_report_audience(audience)
+    stats = evidence.get("summary_stats") or {}
+    scope = evidence.get("scope") or {}
+    plans = evidence.get("plans") or []
+    tasks = evidence.get("tasks") or []
+    title = "\u9636\u6bb5\u6027\u91ce\u5916\u8c03\u67e5\u7efc\u5408\u7b80\u62a5" if audience == "leader" else "\u9636\u6bb5\u6027\u91ce\u5916\u8c03\u67e5\u7efc\u5408\u62a5\u544a"
+    lines = [
+        f"# {title}",
+        "",
+        f"**\u751f\u6210\u65f6\u95f4**?{_report_datetime.now().strftime('%Y-%m-%d %H:%M:%S')}",
+        f"**\u7eb3\u5165\u65b9\u6848**?{scope.get('actual_plan_count', 0)} ?",
+        f"**\u6d89\u53ca\u6837\u65b9**?{scope.get('actual_subplot_count', 0)} ?",
+        "",
+        "## \u4e00\u3001\u603b\u4f53\u6982\u51b5",
+        "",
+        f"\u672c\u62a5\u544a\u6574\u5408\u6240\u9009\u8c03\u67e5\u65b9\u6848\u548c\u6837\u65b9\u8bb0\u5f55\u751f\u6210\uff0c\u5171\u7eb3\u5165 {stats.get('total_tasks', 0)} \u9879\u8c03\u67e5\u4efb\u52a1\uff0c\u5df2\u5b8c\u6210 {stats.get('completed_tasks', 0)} \u9879\uff0c\u5f85\u5b8c\u6210 {stats.get('pending_tasks', 0)} \u9879\uff0c\u73b0\u573a\u8bb0\u5f55 {stats.get('field_observation_count', 0)} \u6761\u3002",
+        "",
+        "| \u6307\u6807 | \u6570\u503c |",
+        "|---|---:|",
+        f"| \u65b9\u6848\u6570 | {scope.get('actual_plan_count', 0)} |",
+        f"| \u6837\u65b9\u6570 | {scope.get('actual_subplot_count', 0)} |",
+        f"| \u6811\u79cd\u6570 | {scope.get('actual_species_count', 0)} |",
+        f"| \u4efb\u52a1\u6570 | {stats.get('total_tasks', 0)} |",
+        f"| \u5df2\u5b8c\u6210 | {stats.get('completed_tasks', 0)} |",
+        f"| \u73b0\u573a\u8bb0\u5f55 | {stats.get('field_observation_count', 0)} |",
+        "",
+        "## \u4e8c\u3001\u4e3b\u8981\u53d1\u73b0??",
+        "",
+    ]
+    cats = stats.get("category_counts") or {}
+    if cats:
+        for key, value in sorted(cats.items(), key=lambda item: item[1], reverse=True)[:8]:
+            lines.append(f"- {key}?{value} ??")
+    else:
+        lines.append("- \u5f53\u524d\u6ca1\u6709\u8db3\u591f\u7684\u5206\u7c7b\u4fe1\u606f\u5f62\u6210\u7a33\u5b9a\u53d1\u73b0\u3002")
+    lines.extend(["", "## \u4e09\u3001\u65b9\u6848\u6765\u6e90??", "", "| \u65b9\u6848 | \u7528\u6237\u9700\u6c42 | \u4efb\u52a1\u6570 |", "|---|---|---:|"])
+    for plan in plans[:30]:
+        lines.append(f"| {_survey_report_value(plan.get('title'))} | {_survey_report_value(plan.get('user_request'))} | {plan.get('task_count', 0)} |")
+    lines.extend(["", "## \u56db\u3001\u73b0\u573a\u9a8c\u8bc1??", ""])
+    observed = [task for task in tasks if task.get("field_observation")]
+    if observed:
+        for task in observed[:15]:
+            obs = task.get("field_observation") or {}
+            lines.append(f"- {_survey_report_value(task.get('target_name') or task.get('target_id'))}?{_survey_report_value(obs.get('notes'))}")
+    else:
+        lines.append("- \u5f53\u524d\u73b0\u573a\u8bb0\u5f55\u8f83\u5c11\uff0c\u7efc\u5408\u62a5\u544a\u4e3b\u8981\u53cd\u6620\u8c03\u67e5\u8ba1\u5212\u548c\u5f85\u9a8c\u8bc1\u95ee\u9898\uff0c\u4e0d\u80fd\u76f4\u63a5\u5f62\u6210\u6700\u7ec8\u73b0\u573a\u7ed3\u8bba\u3002")
+    lines.extend([
+        "",
+        "## \u4e94\u3001\u9636\u6bb5\u5224\u65ad??",
+        "",
+        "- \u6240\u9009\u65b9\u6848\u53ef\u4ee5\u5171\u540c\u56de\u7b54\uff1a\u54ea\u4e9b\u6837\u65b9\u6216\u5bf9\u8c61\u88ab\u53cd\u590d\u7eb3\u5165\u8c03\u67e5\uff0c\u54ea\u4e9b\u95ee\u9898\u7c7b\u578b\u9700\u8981\u4f18\u5148\u6838\u67e5\u3002",
+        "- \u5b8c\u6210\u73b0\u573a\u8bb0\u5f55\u540e\uff0c\u53ef\u4ee5\u8fdb\u4e00\u6b65\u5224\u65ad\u63a8\u8350\u5bf9\u8c61\u662f\u5426\u771f\u5b9e\u3001\u72b6\u6001\u662f\u5426\u4e00\u81f4\u3001\u662f\u5426\u9700\u8981\u8865\u6d4b\u6216\u79fb\u9664\u3002",
+        "- \u5f53\u524d\u62a5\u544a\u4e0d\u76f4\u63a5\u8bc1\u660e\u539f\u56e0\u673a\u5236\u6216\u957f\u671f\u8d8b\u52bf\uff0c\u53ea\u4f5c\u4e3a\u9636\u6bb5\u6027\u8c03\u67e5\u7ec4\u7ec7\u548c\u8bc1\u636e\u6c47\u603b\u3002",
+        "",
+        "## \u516d\u3001\u540e\u7eed\u5b89\u6392??",
+        "",
+        "- \u4f18\u5148\u8865\u9f50\u5f85\u5b8c\u6210\u4efb\u52a1\u7684\u73b0\u573a\u8bb0\u5f55\u3001\u7167\u7247\u3001\u4f4d\u7f6e\u548c\u5fc5\u8981\u6d4b\u91cf\u5b57\u6bb5\u3002",
+        "- \u5bf9\u591a\u65b9\u6848\u91cd\u590d\u51fa\u73b0\u7684\u6837\u65b9\u6216\u5bf9\u8c61\uff0c\u5efa\u8bae\u4f5c\u4e3a\u4e0b\u4e00\u8f6e\u590d\u6838\u91cd\u70b9\u3002",
+        "- \u8c03\u67e5\u7ed3\u675f\u540e\u91cd\u65b0\u751f\u6210\u7efc\u5408\u62a5\u544a\uff0c\u7528\u73b0\u573a\u7ed3\u679c\u66f4\u65b0\u9636\u6bb5\u5224\u65ad\u3002",
+    ])
+    return "\n".join(lines)
+
+
+def _generate_comprehensive_report_with_agent(evidence: _ReportDict[str, _ReportAny], audience: str = "leader") -> _ReportOptional[str]:
+    _set_survey_agent_report_error("")
+    try:
+        from agent import run_agent_chat
+    except Exception as exc:
+        _set_survey_agent_report_error(f"cannot import agent.run_agent_chat: {exc}")
+        return None
+    audience = _normalize_report_audience(audience)
+    audience_name = _report_audience_cn(audience)
+    payload = _report_json.dumps(evidence, ensure_ascii=False, default=str)
+    prompt = f"""
+You are generating an integrated field survey report from selected survey plans and selected subplots.
+Audience: {audience_name}
+
+The report must answer:
+1. Why these plans/subplots are integrated.
+2. What common issues or repeated survey targets appear.
+3. What field observations already support.
+4. What can be concluded after completion.
+5. What cannot be concluded yet.
+
+Use Markdown only, Simplified Chinese, no code blocks. Do not invent facts.
+For leader audience, be concise and decision-oriented. For technical audience, include more task evidence.
+
+Evidence JSON:
+```json
+{payload}
+```
+""".strip()
+    try:
+        result = run_agent_chat(
+            question=prompt,
+            session_id=f"survey_comprehensive_report_{int(time.time())}_{audience}",
+            client_id="survey_report_generator",
+            context={"current_page": "survey_comprehensive_report", "report_mode": True, "report_audience": audience, "context_policy": "auto"},
+            options={"max_tool_rounds": 0, "history_limit": 0},
+        )
+    except Exception as exc:
+        _set_survey_agent_report_error(f"run_agent_chat failed: {exc}")
+        return None
+    answer = result.get("answer") if isinstance(result, dict) else str(result or "")
+    answer = (answer or "").strip()
+    if len(answer) < 120 or "#" not in answer:
+        _set_survey_agent_report_error("agent returned invalid comprehensive report")
+        return None
+    return answer
+
+
+def generate_comprehensive_report(plan_ids: _ReportAny = None, subplot_ids: _ReportAny = None, formats: _ReportAny = None, mode: str = "agent", allow_fallback: bool = True, audience: str = "leader") -> _ReportDict[str, _ReportAny]:
+    audience = _normalize_report_audience(audience)
+    mode = str(mode or "agent").strip().lower()
+    evidence = _build_comprehensive_report_evidence(plan_ids=plan_ids, subplot_ids=subplot_ids)
+    if not evidence.get("tasks"):
+        return {"status": "not_found", "message": "\u672a\u627e\u5230\u53ef\u7eb3\u5165\u7efc\u5408\u62a5\u544a\u7684\u8c03\u67e5\u4efb\u52a1\uff0c\u8bf7\u9009\u62e9\u81f3\u5c11\u4e00\u4e2a\u6709\u4efb\u52a1\u7684\u65b9\u6848\u6216\u6837\u65b9\u3002"}
+    report_text = ""
+    report_mode = mode
+    if mode in {"agent", "auto"}:
+        report_mode = "agent"
+        report_text = _generate_comprehensive_report_with_agent(evidence, audience=audience) or ""
+    if not report_text and (mode == "template" or allow_fallback):
+        report_mode = "template_fallback" if mode != "template" else "template"
+        report_text = _generate_comprehensive_report_fallback(evidence, audience=audience)
+    if not report_text:
+        return {"status": "error", "message": "\u7efc\u5408\u62a5\u544a\u751f\u6210\u5931\u8d25\u3002"}
+    safe_title = f"comprehensive_{audience}_{_report_datetime.now().strftime('%Y%m%d_%H%M%S')}"
+    filename = f"survey_report_{safe_title}.md"
+    path = REPORT_DIR / filename
+    path.write_text(report_text, encoding="utf-8")
+    export_result = _export_survey_report_files(path, formats=formats)
+    return {
+        "status": "success",
+        "report": report_text,
+        "report_file": filename,
+        "report_mode": report_mode,
+        "report_audience": audience,
+        "files": export_result.get("files", {"md": filename}),
+        "export_errors": export_result.get("export_errors", {}),
+        "stats": evidence.get("summary_stats") or {},
+        "scope": evidence.get("scope") or {},
+    }
 
 def generate_report(plan_id: int, formats: _ReportAny = None, mode: str = "agent", allow_fallback: bool = False, audience: str = "technical") -> _ReportDict[str, _ReportAny]:
     result = _get_plan_full(plan_id)
