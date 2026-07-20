@@ -2428,10 +2428,11 @@ def survey_generate_report(
     formats: str = Query(default="md", description="Report generation formats. Default md only."),
     mode: str = Query(default="agent", description="Report mode: agent/template/auto."),
     allow_fallback: bool = Query(default=False, description="Allow auto mode to fall back to template report."),
+    audience: str = Query(default="technical", description="Report audience: technical/leader."),
 ) -> Dict[str, Any]:
     """Generate the survey report. Default is agent analysis, not template fallback."""
     try:
-        result = svm.generate_report(plan_id, formats=formats, mode=mode, allow_fallback=allow_fallback)
+        result = svm.generate_report(plan_id, formats=formats, mode=mode, allow_fallback=allow_fallback, audience=audience)
         files = result.get("files") or {}
         result["file_urls"] = {fmt: f"/reports/{filename}" for fmt, filename in files.items() if filename}
 

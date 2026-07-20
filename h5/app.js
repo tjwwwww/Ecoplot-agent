@@ -121,6 +121,7 @@ const dom = {
   surveyAiAnalysisText: document.querySelector("#surveyAiAnalysisText"),
   surveyRecList: document.querySelector("#surveyRecList"),
   surveyReportBtn: document.querySelector("#surveyReportBtn"),
+  surveyBriefReportBtn: document.querySelector("#surveyBriefReportBtn"),
   surveyRevisePanel: null,
   surveyReviseInput: null,
   surveyReviseSubmit: null,
@@ -2403,27 +2404,47 @@ function initSurveyEventListeners() {
   });
 
   // 生成报告
-  addClickListener(dom.surveyReportBtn, async () => {
-    if (!currentPlanId) return;
-    try {
-      const resp = await fetch(`/api/survey/plans/${currentPlanId}/report?mode=agent&allow_fallback=false`, {
-        method: "POST",
-      });
-      const data = await resp.json();
-      if (data.status === "success") {
-        if (currentSurveyPlan) {
-          currentSurveyPlan.latest_report_text = data.report || "";
-          currentSurveyPlan.latest_report_file = data.report_file || data.files?.md || "";
-          currentSurveyPlan.latest_report_mode = data.report_mode || "agent";
-        }
-        showSurveyReport(data);
-      } else {
-        alert("\u751f\u6210\u62a5\u544a\u5931\u8d25: " + (data.message || data.detail || data.report_mode || resp.status));
+  addClickListener(dom.surveyReportBtn, () => generateSurveyReport("technical", dom.surveyReportBtn));
+  addClickListener(dom.surveyBriefReportBtn, () => generateSurveyReport("leader", dom.surveyBriefReportBtn));
+
+async function generateSurveyReport(audience = "technical", triggerButton = null) {
+  if (!currentPlanId) return;
+  const button = triggerButton || dom.surveyReportBtn;
+  const originalText = button ? button.textContent : "";
+  if (button) {
+    button.disabled = true;
+    button.textContent = audience === "leader" ? "\u6b63\u5728\u751f\u6210\u7b80\u62a5..." : "\u6b63\u5728\u751f\u6210\u62a5\u544a...";
+  }
+  try {
+    const params = new URLSearchParams({
+      mode: "agent",
+      allow_fallback: "false",
+      audience,
+    });
+    const resp = await fetch(`/api/survey/plans/${currentPlanId}/report?${params.toString()}`, {
+      method: "POST",
+    });
+    const data = await resp.json().catch(() => ({}));
+    if (data.status === "success") {
+      if (currentSurveyPlan) {
+        currentSurveyPlan.latest_report_text = data.report || "";
+        currentSurveyPlan.latest_report_file = data.report_file || data.files?.md || "";
+        currentSurveyPlan.latest_report_mode = data.report_mode || "agent";
+        currentSurveyPlan.latest_report_audience = data.report_audience || audience;
       }
-    } catch (err) {
-      alert("网络错误: " + err.message);
+      showSurveyReport(data);
+    } else {
+      alert("\u751f\u6210\u62a5\u544a\u5931\u8d25: " + (data.message || data.detail || data.report_mode || resp.status));
     }
-  });
+  } catch (err) {
+    alert("\u7f51\u7edc\u9519\u8bef: " + err.message);
+  } finally {
+    if (button) {
+      button.disabled = false;
+      button.textContent = originalText;
+    }
+  }
+}
 
   // 咨询智能体 — 带着方案上下文切换到对话视图
   addClickListener(dom.surveyChatBtn, async () => {

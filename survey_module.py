@@ -1461,7 +1461,28 @@ def _set_survey_agent_report_error(message: str) -> None:
     _LAST_SURVEY_AGENT_REPORT_ERROR = str(message or "").strip()[:1000]
 
 
-def _generate_survey_report_with_agent(evidence_package: _ReportDict[str, _ReportAny]) -> _ReportOptional[str]:
+
+def _normalize_report_audience(audience: str = "technical") -> str:
+    value = str(audience or "technical").strip().lower()
+    aliases = {
+        "detail": "technical",
+        "detailed": "technical",
+        "expert": "technical",
+        "field": "technical",
+        "technical": "technical",
+        "leader": "leader",
+        "brief": "leader",
+        "summary": "leader",
+        "management": "leader",
+    }
+    return aliases.get(value, "technical")
+
+
+def _report_audience_cn(audience: str) -> str:
+    return "\u9886\u5bfc\u7b80\u62a5" if audience == "leader" else "\u8be6\u7ec6\u8c03\u67e5\u62a5\u544a"
+
+
+def _generate_survey_report_with_agent(evidence_package: _ReportDict[str, _ReportAny], audience: str = "technical") -> _ReportOptional[str]:
     _set_survey_agent_report_error("")
     try:
         from agent import run_agent_chat
@@ -1469,34 +1490,70 @@ def _generate_survey_report_with_agent(evidence_package: _ReportDict[str, _Repor
         _set_survey_agent_report_error(f"cannot import agent.run_agent_chat: {exc}")
         return None
 
+    audience = _normalize_report_audience(audience)
+    audience_name = _report_audience_cn(audience)
+    if audience == "leader":
+        structure = """
+# \u91ce\u5916\u8c03\u67e5\u7b80\u62a5
+
+## \u4e00\u3001\u6838\u5fc3\u7ed3\u8bba
+\u75283\u52305\u6761\u6982\u62ec\u672c\u6b21\u8c03\u67e5\u4e3a\u4ec0\u4e48\u91cd\u8981\u3001\u91cd\u70b9\u5bf9\u8c61\u662f\u4ec0\u4e48\u3001\u4e3b\u8981\u8981\u89e3\u51b3\u4ec0\u4e48\u95ee\u9898\u3002
+
+## \u4e8c\u3001\u8c03\u67e5\u5b89\u6392
+\u6982\u62ec\u8c03\u67e5\u8303\u56f4\u3001\u5bf9\u8c61\u6570\u91cf\u3001\u5b8c\u6210\u8fdb\u5ea6\u548c\u4f18\u5148\u7ea7\uff0c\u4e0d\u5806\u780c\u660e\u7ec6\u3002
+
+## \u4e09\u3001\u5173\u6ce8\u91cd\u70b9
+\u8bf4\u660e\u73b0\u573a\u6700\u9700\u8981\u5173\u6ce8\u7684\u73b0\u8c61\u548c\u6570\u636e\u7f3a\u53e3\u3002
+
+## \u56db\u3001\u9884\u671f\u4ea7\u51fa
+\u8bf4\u660e\u8c03\u67e5\u7ed3\u675f\u540e\u80fd\u5f62\u6210\u4ec0\u4e48\u5224\u65ad\u3001\u56fe\u8868\u6216\u7ba1\u7406\u4f9d\u636e\u3002
+
+## \u4e94\u3001\u5efa\u8bae\u4e8b\u9879
+\u7ed9\u51fa\u9700\u8981\u534f\u8c03\u3001\u5b89\u6392\u6216\u51b3\u7b56\u7684\u4e8b\u9879\u3002
+""".strip()
+        required_sections = ["\u6838\u5fc3\u7ed3\u8bba", "\u8c03\u67e5\u5b89\u6392", "\u5173\u6ce8\u91cd\u70b9", "\u9884\u671f\u4ea7\u51fa"]
+    else:
+        structure = """
+# \u91ce\u5916\u8c03\u67e5\u8be6\u7ec6\u62a5\u544a
+
+## \u4e00\u3001\u8c03\u67e5\u76ee\u6807
+\u8bf4\u660e\u672c\u6b21\u4e3a\u4ec0\u4e48\u8c03\u67e5\u8fd9\u4e9b\u5bf9\u8c61\uff1a\u8981\u6838\u67e5\u4ec0\u4e48\u73b0\u8c61\u3001\u8865\u8db3\u4ec0\u4e48\u8bc1\u636e\u3001\u670d\u52a1\u4ec0\u4e48\u5206\u6790\u95ee\u9898\u3002
+
+## \u4e8c\u3001\u9009\u62e9\u4f9d\u636e
+\u8bf4\u660e\u6837\u65b9\u3001\u5355\u6728\u6216\u6811\u79cd\u88ab\u7eb3\u5165\u65b9\u6848\u7684\u4f9d\u636e\uff0c\u533a\u5206\u7528\u6237\u8981\u6c42\u3001\u6570\u636e\u5e93\u4e8b\u5b9e\u3001\u6307\u6807\u7b5b\u67e5\u548c\u73b0\u573a\u8bb0\u5f55\u3002
+
+## \u4e09\u3001\u6838\u67e5\u4efb\u52a1
+\u628a\u73b0\u573a\u8981\u505a\u7684\u4e8b\u60c5\u5199\u6e05\u695a\uff1a\u770b\u4ec0\u4e48\u3001\u91cf\u4ec0\u4e48\u3001\u62cd\u4ec0\u4e48\u3001\u8bb0\u5f55\u4ec0\u4e48\u3002\u53ef\u7528\u8868\u683c\u5448\u73b0\u91cd\u70b9\u5bf9\u8c61\u3002
+
+## \u56db\u3001\u9884\u671f\u5224\u65ad
+\u8bf4\u660e\u8c03\u67e5\u5b8c\u6210\u540e\u80fd\u591f\u652f\u6301\u54ea\u4e9b\u5224\u65ad\u3001\u56fe\u8868\u6216\u540e\u7eed\u5206\u6790\uff0c\u4e5f\u8bf4\u660e\u4e0d\u80fd\u76f4\u63a5\u8bc1\u660e\u54ea\u4e9b\u56e0\u679c\u7ed3\u8bba\u3002
+
+## \u4e94\u3001\u8865\u5145\u5efa\u8bae
+\u7ed9\u51fa\u540e\u7eed\u590d\u6d4b\u3001\u8865\u91c7\u5b57\u6bb5\u3001\u6570\u636e\u66f4\u65b0\u548c\u98ce\u9669\u8fb9\u754c\u3002
+""".strip()
+        required_sections = ["\u8c03\u67e5\u76ee\u6807", "\u9009\u62e9\u4f9d\u636e", "\u6838\u67e5\u4efb\u52a1", "\u9884\u671f\u5224\u65ad"]
+
     payload = _report_json.dumps(evidence_package, ensure_ascii=False, default=str)
     prompt = f"""
 You are a field ecological survey report agent. Generate one Markdown report from the evidence package.
 
-The report MUST use this four-part structure. Do not add other main sections except an optional appendix table.
-Each main section title should be concise, about four Chinese characters:
+Report audience: {audience_name}
+Use this report structure exactly:
 
-# \u91ce\u5916\u8c03\u67e5\u62a5\u544a
+{structure}
 
-## \u4e00\u3001\u4efb\u52a1\u6982\u51b5
-Explain why this plan was generated, user objective, task count, completion status, and data basis.
-
-## \u4e8c\u3001\u5bf9\u8c61\u6e05\u5355
-Summarize selected subplots/trees/species by priority. Use a compact table when it improves readability.
-
-## \u4e09\u3001\u73b0\u573a\u8bb0\u5f55
-If field observations exist, summarize actual observations first. If observations are sparse or absent, clearly state that this is a pre-survey/task-plan report and list what should be recorded on site.
-
-## \u56db\u3001\u540e\u7eed\u5efa\u8bae
-Give next field actions, missing data, review points, and boundaries. Do not make causal claims unless the evidence package directly supports them.
+Writing focus:
+- The report must answer why these objects are investigated, not only describe what is in the plan.
+- Explain what questions the survey can answer after completion.
+- Keep leader brief concise and decision-oriented; keep technical report actionable for field staff.
 
 Rules:
 1. Use only facts in the evidence package. Do not invent observations, photos, counts, species, locations, or conclusions.
-2. Distinguish database facts, generated-plan rationale, field observations, and unresolved questions.
-3. If evidence only supports screening or association, use wording such as \"\u9700\u6838\u67e5\", \"\u5173\u6ce8\u4fe1\u53f7\", \"\u5bf9\u6bd4\u5bf9\u8c61\", or \"\u8bc1\u636e\u4e0d\u8db3\".
+2. Distinguish database facts, generated-plan rationale, field observations, unresolved questions, and expected outputs.
+3. If evidence only supports screening or association, use cautious wording such as "\u9700\u6838\u67e5", "\u5173\u6ce8\u4fe1\u53f7", "\u5bf9\u6bd4\u5bf9\u8c61", or "\u8bc1\u636e\u4e0d\u8db3".
 4. Use Simplified Chinese.
 5. Output Markdown only. Do not output JSON. Do not use code blocks.
-6. Keep the report readable for field staff and managers; avoid dumping all raw records into the body.
+6. Avoid dumping all raw records into the body.
 
 Evidence package JSON:
 ```json
@@ -1507,9 +1564,9 @@ Evidence package JSON:
     try:
         result = run_agent_chat(
             question=prompt,
-            session_id=f"survey_report_{evidence_package.get('plan', {}).get('plan_id', 'unknown')}",
+            session_id=f"survey_report_{evidence_package.get('plan', {}).get('plan_id', 'unknown')}_{audience}",
             client_id="survey_report_generator",
-            context={"current_page": "survey_report", "report_mode": True, "context_policy": "auto"},
+            context={"current_page": "survey_report", "report_mode": True, "report_audience": audience, "context_policy": "auto"},
             options={"max_tool_rounds": 0, "history_limit": 0},
         )
     except TypeError as exc:
@@ -1530,90 +1587,129 @@ Evidence package JSON:
     if not answer:
         _set_survey_agent_report_error("agent returned empty report")
         return None
-    required_sections = ["\u4efb\u52a1\u6982\u51b5", "\u5bf9\u8c61\u6e05\u5355", "\u73b0\u573a\u8bb0\u5f55", "\u540e\u7eed\u5efa\u8bae"]
     if len(answer) < 120 or "#" not in answer or not all(section in answer for section in required_sections):
-        _set_survey_agent_report_error(f"agent report does not match four-section Markdown template; length={len(answer)}")
+        _set_survey_agent_report_error(f"agent report does not match {audience_name} Markdown protocol; length={len(answer)}")
         return None
     return answer
 
-def _generate_survey_report_fallback(evidence_package: _ReportDict[str, _ReportAny]) -> str:
+
+def _generate_survey_report_fallback(evidence_package: _ReportDict[str, _ReportAny], audience: str = "technical") -> str:
+    audience = _normalize_report_audience(audience)
     plan = evidence_package.get("plan") or {}
     stats = evidence_package.get("execution_stats") or {}
     site_brief = evidence_package.get("site_brief") or {}
     tasks = evidence_package.get("tasks") or []
-    data_snapshot = site_brief.get("data_snapshot") or {}
-    analysis_text = site_brief.get("analysis_text") or ""
+    data_snapshot = (site_brief.get("data_snapshot") or {}) if isinstance(site_brief, dict) else {}
     observed_tasks = [task for task in tasks if task.get("field_observation")]
+    user_request = _survey_report_value(plan.get("user_request"))
+    ai_analysis = _survey_report_value(plan.get("ai_analysis"), "\u672c\u65b9\u6848\u7531\u667a\u80fd\u4f53\u6839\u636e\u7528\u6237\u9700\u6c42\u548c\u5df2\u6709\u6837\u5730\u6570\u636e\u751f\u6210\u3002")
+
+    if audience == "leader":
+        lines = [
+            "# \u91ce\u5916\u8c03\u67e5\u7b80\u62a5",
+            "",
+            f"**\u751f\u6210\u65f6\u95f4**\uff1a{_report_datetime.now().strftime('%Y-%m-%d %H:%M:%S')}",
+            f"**\u8c03\u67e5\u65b9\u6848**\uff1a{_survey_report_value(plan.get('title'))}",
+            "",
+            "## \u4e00\u3001\u6838\u5fc3\u7ed3\u8bba",
+            "",
+            f"- \u672c\u6b21\u8c03\u67e5\u56f4\u7ed5\u7528\u6237\u95ee\u9898\u201c{user_request}\u201d\u7ec4\u7ec7\uff0c\u91cd\u70b9\u662f\u4e3a\u73b0\u573a\u6838\u67e5\u548c\u540e\u7eed\u5224\u65ad\u8865\u8db3\u8bc1\u636e\u3002",
+            f"- \u65b9\u6848\u5305\u542b {stats.get('total_tasks', 0)} \u9879\u8c03\u67e5\u4efb\u52a1\uff0c\u5df2\u5b8c\u6210 {stats.get('completed_tasks', 0)} \u9879\uff0c\u5f85\u5b8c\u6210 {stats.get('pending_tasks', 0)} \u9879\u3002",
+            f"- \u5f53\u524d\u5df2\u6709\u73b0\u573a\u8bb0\u5f55 {stats.get('field_observation_count', 0)} \u6761\uff0c\u62a5\u544a\u7ed3\u8bba\u9700\u4ee5\u73b0\u573a\u6838\u67e5\u7ed3\u679c\u66f4\u65b0\u3002",
+            "",
+            "## \u4e8c\u3001\u8c03\u67e5\u5b89\u6392",
+            "",
+            "| \u6307\u6807 | \u6570\u503c |",
+            "|---|---:|",
+            f"| \u8c03\u67e5\u4efb\u52a1\u6570 | {stats.get('total_tasks', 0)} |",
+            f"| \u5df2\u5b8c\u6210 | {stats.get('completed_tasks', 0)} |",
+            f"| \u5f85\u5b8c\u6210 | {stats.get('pending_tasks', 0)} |",
+            f"| \u73b0\u573a\u8bb0\u5f55 | {stats.get('field_observation_count', 0)} |",
+            "",
+            "## \u4e09\u3001\u5173\u6ce8\u91cd\u70b9",
+            "",
+            ai_analysis,
+            "",
+            "## \u56db\u3001\u9884\u671f\u4ea7\u51fa",
+            "",
+            "- \u660e\u786e\u91cd\u70b9\u5bf9\u8c61\u662f\u5426\u771f\u5b9e\u5b58\u5728\u3001\u72b6\u6001\u662f\u5426\u4e0e\u7cfb\u7edf\u8bb0\u5f55\u4e00\u81f4\u3002",
+            "- \u4e3a\u540e\u7eed\u6797\u5206\u7ed3\u6784\u3001\u5f02\u5e38\u6728\u590d\u6838\u3001\u6837\u65b9\u5bf9\u6bd4\u6216\u8865\u6d4b\u8ba1\u5212\u63d0\u4f9b\u8bc1\u636e\u3002",
+            "- \u5f62\u6210\u53ef\u5f52\u6863\u7684\u73b0\u573a\u8bb0\u5f55\uff0c\u652f\u6301\u540e\u7eed\u66f4\u65b0\u6570\u636e\u5e93\u548c\u518d\u5206\u6790\u3002",
+            "",
+            "## \u4e94\u3001\u5efa\u8bae\u4e8b\u9879",
+            "",
+            "- \u4f18\u5148\u5b8c\u6210\u9ad8\u4f18\u5148\u7ea7\u548c\u4fe1\u606f\u7f3a\u53e3\u8f83\u5927\u7684\u5bf9\u8c61\u3002",
+            "- \u8c03\u67e5\u7ed3\u675f\u540e\u91cd\u65b0\u751f\u6210\u8be6\u7ec6\u62a5\u544a\uff0c\u7528\u73b0\u573a\u8bb0\u5f55\u66ff\u4ee3\u63a8\u6d4b\u6027\u63cf\u8ff0\u3002",
+            "- \u5f53\u524d\u62a5\u544a\u4e0d\u76f4\u63a5\u4f5c\u4e3a\u539f\u56e0\u5224\u5b9a\u6216\u7ecf\u8425\u51b3\u7b56\u7ed3\u8bba\u3002",
+        ]
+        return "\n".join(lines)
 
     lines = [
-        "# \u91ce\u5916\u8c03\u67e5\u62a5\u544a",
+        "# \u91ce\u5916\u8c03\u67e5\u8be6\u7ec6\u62a5\u544a",
         "",
         f"**\u751f\u6210\u65f6\u95f4**\uff1a{_report_datetime.now().strftime('%Y-%m-%d %H:%M:%S')}",
         f"**\u8c03\u67e5\u65b9\u6848**\uff1a{_survey_report_value(plan.get('title'))}",
         "",
-        "## \u4e00\u3001\u4efb\u52a1\u6982\u51b5",
+        "## \u4e00\u3001\u8c03\u67e5\u76ee\u6807",
         "",
-        f"\u672c\u6b21\u62a5\u544a\u57fa\u4e8e\u8c03\u67e5\u65b9\u6848\u3001\u667a\u80fd\u4f53\u63a8\u8350\u4efb\u52a1\u548c\u73b0\u573a\u8bb0\u5f55\u751f\u6210\u3002\u65b9\u6848\u5171\u5305\u542b {stats.get('total_tasks', 0)} \u9879\u4efb\u52a1\uff0c\u5df2\u5b8c\u6210 {stats.get('completed_tasks', 0)} \u9879\uff0c\u5f85\u5b8c\u6210 {stats.get('pending_tasks', 0)} \u9879\uff0c\u5df2\u5f62\u6210 {stats.get('field_observation_count', 0)} \u6761\u73b0\u573a\u8bb0\u5f55\u3002",
-        f"\u7528\u6237\u9700\u6c42\uff1a{_survey_report_value(plan.get('user_request'))}",
+        f"\u672c\u6b21\u8c03\u67e5\u56f4\u7ed5\u7528\u6237\u9700\u6c42\u201c{user_request}\u201d\u5c55\u5f00\uff0c\u76ee\u6807\u662f\u901a\u8fc7\u73b0\u573a\u590d\u6838\u8865\u8db3\u6570\u636e\u5e93\u8bc1\u636e\uff0c\u786e\u8ba4\u63a8\u8350\u5bf9\u8c61\u7684\u771f\u5b9e\u72b6\u6001\uff0c\u5e76\u4e3a\u540e\u7eed\u5206\u6790\u63d0\u4f9b\u53ef\u9760\u8f93\u5165\u3002",
+        f"\u65b9\u6848\u5171\u5305\u542b {stats.get('total_tasks', 0)} \u9879\u4efb\u52a1\uff0c\u5df2\u5b8c\u6210 {stats.get('completed_tasks', 0)} \u9879\uff0c\u5f85\u5b8c\u6210 {stats.get('pending_tasks', 0)} \u9879\uff0c\u5df2\u6709\u73b0\u573a\u8bb0\u5f55 {stats.get('field_observation_count', 0)} \u6761\u3002",
+        "",
+        "## \u4e8c\u3001\u9009\u62e9\u4f9d\u636e",
+        "",
+        ai_analysis,
         "",
     ]
-
-    if analysis_text:
-        lines.extend([analysis_text, ""])
-    elif data_snapshot:
+    if data_snapshot:
         lines.extend([
+            "\u7cfb\u7edf\u6570\u636e\u57fa\u7840\u5305\u62ec\uff1a",
             f"- \u4e54\u6728\u8bb0\u5f55\uff1a{_survey_report_value(data_snapshot.get('tree_count'))}",
             f"- \u6837\u65b9\u6570\u91cf\uff1a{_survey_report_value(data_snapshot.get('subplot_count'))}",
             f"- \u6811\u79cd\u6570\u91cf\uff1a{_survey_report_value(data_snapshot.get('species_count'))}",
             "",
         ])
-
     lines.extend([
-        "## \u4e8c\u3001\u5bf9\u8c61\u6e05\u5355",
+        "## \u4e09\u3001\u6838\u67e5\u4efb\u52a1",
         "",
-        _survey_report_value(plan.get("ai_analysis"), "\u672c\u65b9\u6848\u7531\u667a\u80fd\u4f53\u6839\u636e\u7528\u6237\u9700\u6c42\u548c\u5df2\u6709\u6837\u5730\u6570\u636e\u751f\u6210\u3002"),
-        "",
-        "| \u5e8f\u53f7 | \u5bf9\u8c61 | \u6837\u65b9 | \u4f18\u5148\u7ea7 | \u63a8\u8350\u7406\u7531 |",
-        "|---:|---|---|---|---|",
+        "| \u5e8f\u53f7 | \u5bf9\u8c61 | \u6837\u65b9 | \u4f18\u5148\u7ea7 | \u5165\u9009\u7406\u7531 | \u73b0\u573a\u6838\u67e5\u91cd\u70b9 |",
+        "|---:|---|---|---|---|---|",
     ])
     for index, task in enumerate(tasks[:30], start=1):
         target = _survey_report_value(task.get("target_name") or task.get("target_id"))
+        action = _survey_report_value(task.get("suggested_action"), "\u6838\u67e5\u5bf9\u8c61\u72b6\u6001\u3001\u4f4d\u7f6e\u3001\u5065\u5eb7\u72b6\u51b5\u548c\u5f02\u5e38\u73b0\u8c61")
         lines.append(
             f"| {index} | {target} | {_survey_report_value(task.get('subplot_id'))} | "
-            f"{_survey_report_value(task.get('priority'))} | {_survey_report_value(task.get('reason'))} |"
+            f"{_survey_report_value(task.get('priority'))} | {_survey_report_value(task.get('reason'))} | {action} |"
         )
-    lines.append("")
-
-    lines.extend(["## \u4e09\u3001\u73b0\u573a\u8bb0\u5f55", ""])
+    lines.extend(["", "## \u56db\u3001\u9884\u671f\u5224\u65ad", ""])
+    lines.extend([
+        "\u8c03\u67e5\u5b8c\u6210\u540e\uff0c\u53ef\u4ee5\u652f\u6301\u4ee5\u4e0b\u5224\u65ad\uff1a",
+        "- \u63a8\u8350\u5bf9\u8c61\u662f\u5426\u771f\u5b9e\u5b58\u5728\uff0c\u73b0\u72b6\u662f\u5426\u4e0e\u7cfb\u7edf\u8bb0\u5f55\u4e00\u81f4\u3002",
+        "- \u91cd\u70b9\u6837\u65b9\u6216\u5355\u6728\u662f\u5426\u9700\u8981\u7ee7\u7eed\u590d\u6d4b\u3001\u8865\u6d4b\u6216\u4ece\u65b9\u6848\u4e2d\u79fb\u9664\u3002",
+        "- \u540e\u7eed\u662f\u5426\u53ef\u4ee5\u5f00\u5c55\u6837\u65b9\u5bf9\u6bd4\u3001\u6811\u79cd\u72b6\u6001\u5206\u6790\u3001\u5f02\u5e38\u6728\u590d\u6838\u6216\u56fe\u8868\u6c47\u603b\u3002",
+        "- \u54ea\u4e9b\u95ee\u9898\u4ecd\u7f3a\u5c11\u8bc1\u636e\uff0c\u4e0d\u80fd\u5f62\u6210\u539f\u56e0\u6027\u7ed3\u8bba\u3002",
+        "",
+    ])
+    lines.extend(["## \u4e94\u3001\u8865\u5145\u5efa\u8bae", ""])
     if observed_tasks:
+        lines.append("\u5df2\u6709\u73b0\u573a\u8bb0\u5f55\u6458\u8981\uff1a")
         for task in observed_tasks[:12]:
             obs = task.get("field_observation") or {}
-            lines.extend([
-                f"### {_survey_report_value(task.get('target_name') or task.get('target_id'))}",
-                f"- \u73b0\u573a\u72b6\u6001\uff1a{_survey_report_value(obs.get('health_status'))}",
-                f"- \u73b0\u573a\u8bb0\u5f55\uff1a{_survey_report_value(obs.get('notes'))}",
-                f"- \u5efa\u8bae\u52a8\u4f5c\uff1a{_survey_report_value(task.get('suggested_action'))}",
-                "",
-            ])
+            lines.append(f"- {_survey_report_value(task.get('target_name') or task.get('target_id'))}\uff1a{_survey_report_value(obs.get('notes'))}")
+        lines.append("")
     else:
         lines.extend([
-            "\u5f53\u524d\u5c1a\u672a\u8bb0\u5f55\u8db3\u591f\u7684\u73b0\u573a\u89c2\u5bdf\u4fe1\u606f\uff0c\u56e0\u6b64\u8be5\u62a5\u544a\u5b9a\u4f4d\u4e3a\u8c03\u67e5\u524d\u4efb\u52a1\u8bf4\u660e\u3002",
-            "\u73b0\u573a\u5e94\u91cd\u70b9\u8bb0\u5f55\u5bf9\u8c61\u662f\u5426\u5b58\u5728\u3001\u6811\u52bf\u548c\u5065\u5eb7\u72b6\u6001\u3001\u5f02\u5e38\u73b0\u8c61\u3001\u7167\u7247\u6216\u4f4d\u7f6e\u8bf4\u660e\u3002",
+            "\u5f53\u524d\u73b0\u573a\u8bb0\u5f55\u4ecd\u4e0d\u8db3\uff0c\u62a5\u544a\u5b9a\u4f4d\u4e3a\u8c03\u67e5\u524d\u4efb\u52a1\u8bf4\u660e\u3002\u73b0\u573a\u5e94\u91cd\u70b9\u8bb0\u5f55\u5bf9\u8c61\u662f\u5426\u5b58\u5728\u3001\u5065\u5eb7\u72b6\u6001\u3001\u5f02\u5e38\u73b0\u8c61\u3001\u7167\u7247\u3001\u4f4d\u7f6e\u548c\u5fc5\u8981\u8865\u6d4b\u5b57\u6bb5\u3002",
             "",
         ])
-
     lines.extend([
-        "## \u56db\u3001\u540e\u7eed\u5efa\u8bae",
-        "",
-        "- \u5bf9\u5df2\u5b8c\u6210\u8bb0\u5f55\u7684\u4efb\u52a1\uff0c\u5e94\u7ed3\u5408\u73b0\u573a\u5907\u6ce8\u3001\u7167\u7247\u548c\u6570\u636e\u5e93\u6307\u6807\u8fdb\u884c\u590d\u6838\u3002",
-        "- \u5bf9\u672a\u5b8c\u6210\u7684\u91cd\u70b9\u4efb\u52a1\uff0c\u5e94\u4fdd\u7559\u5728\u540e\u7eed\u8c03\u67e5\u6e05\u5355\u4e2d\u7ee7\u7eed\u6838\u67e5\u3002",
-        "- \u8bc1\u636e\u4e0d\u8db3\u65f6\u4e0d\u76f4\u63a5\u5f62\u6210\u539f\u56e0\u5224\u65ad\uff0c\u800c\u662f\u8f6c\u5316\u4e3a\u8865\u6d4b\u5b57\u6bb5\u6216\u590d\u6d4b\u4efb\u52a1\u3002",
-        "- \u5efa\u8bae\u8c03\u67e5\u7ed3\u675f\u540e\u518d\u6b21\u751f\u6210\u62a5\u544a\uff0c\u7528\u5b8c\u6574\u73b0\u573a\u8bb0\u5f55\u66f4\u65b0\u6837\u5730\u8ba4\u8bc6\u3002",
+        "- \u5bf9\u5df2\u5b8c\u6210\u4efb\u52a1\uff0c\u7ed3\u5408\u5907\u6ce8\u3001\u7167\u7247\u548c\u6570\u636e\u5e93\u6307\u6807\u8fdb\u884c\u590d\u6838\u3002",
+        "- \u5bf9\u672a\u5b8c\u6210\u4efb\u52a1\uff0c\u7ee7\u7eed\u4fdd\u7559\u5728\u540e\u7eed\u8c03\u67e5\u6e05\u5355\u4e2d\u3002",
+        "- \u8bc1\u636e\u4e0d\u8db3\u65f6\u4e0d\u76f4\u63a5\u5f62\u6210\u539f\u56e0\u5224\u65ad\uff0c\u5e94\u8f6c\u5316\u4e3a\u8865\u6d4b\u5b57\u6bb5\u6216\u590d\u6d4b\u4efb\u52a1\u3002",
         "",
         "*\u62a5\u544a\u7531 ForestryAgent \u91ce\u5916\u8c03\u67e5\u6a21\u5757\u81ea\u52a8\u751f\u6210\u3002*",
     ])
     return "\n".join(lines)
-
 
 def _normalize_report_formats(formats: _ReportAny = None) -> _ReportList[str]:
     if formats is None:
@@ -1805,7 +1901,7 @@ def export_existing_report(report_file: str, formats: _ReportAny) -> _ReportDict
     }
 
 
-def generate_report(plan_id: int, formats: _ReportAny = None, mode: str = "agent", allow_fallback: bool = False) -> _ReportDict[str, _ReportAny]:
+def generate_report(plan_id: int, formats: _ReportAny = None, mode: str = "agent", allow_fallback: bool = False, audience: str = "technical") -> _ReportDict[str, _ReportAny]:
     result = _get_plan_full(plan_id)
     if not result:
         return {"status": "not_found", "message": f"\u672a\u627e\u5230\u8c03\u67e5\u65b9\u6848 {plan_id}"}
@@ -1822,6 +1918,7 @@ def generate_report(plan_id: int, formats: _ReportAny = None, mode: str = "agent
         observations=observations,
     )
 
+    audience = _normalize_report_audience(audience)
     mode = str(mode or "agent").strip().lower()
     if mode not in {"agent", "template", "auto"}:
         return {"status": "error", "message": f"\u4e0d\u652f\u6301\u7684\u62a5\u544a\u751f\u6210\u6a21\u5f0f: {mode}"}
@@ -1830,15 +1927,15 @@ def generate_report(plan_id: int, formats: _ReportAny = None, mode: str = "agent
     report_text = ""
     if mode in {"agent", "auto"}:
         report_mode = "agent"
-        report_text = _generate_survey_report_with_agent(evidence_package) or ""
+        report_text = _generate_survey_report_with_agent(evidence_package, audience=audience) or ""
 
     if not report_text and mode == "template":
         report_mode = "template"
-        report_text = _generate_survey_report_fallback(evidence_package)
+        report_text = _generate_survey_report_fallback(evidence_package, audience=audience)
 
     if not report_text and mode == "auto" and allow_fallback:
         report_mode = "template_fallback"
-        report_text = _generate_survey_report_fallback(evidence_package)
+        report_text = _generate_survey_report_fallback(evidence_package, audience=audience)
 
     if not report_text:
         return {
@@ -1850,7 +1947,7 @@ def generate_report(plan_id: int, formats: _ReportAny = None, mode: str = "agent
         }
 
     safe_title = _survey_report_safe_title(plan.get("title") or f"plan_{plan_id}")
-    filename = f"survey_report_{plan_id}_{safe_title}.md"
+    filename = f"survey_report_{plan_id}_{audience}_{safe_title}.md"
     path = REPORT_DIR / filename
     path.write_text(report_text, encoding="utf-8")
     export_result = _export_survey_report_files(path, formats=formats)
@@ -1886,6 +1983,7 @@ def generate_report(plan_id: int, formats: _ReportAny = None, mode: str = "agent
         "report": report_text,
         "report_file": filename,
         "report_mode": report_mode,
+        "report_audience": audience,
         "files": export_result.get("files", {"md": filename}),
         "requested_formats": export_result.get("requested_formats", ["md"]),
         "export_errors": export_result.get("export_errors", {}),
