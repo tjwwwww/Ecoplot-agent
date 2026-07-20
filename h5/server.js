@@ -17,10 +17,12 @@ const MIME_TYPES = {
   ".webp": "image/webp",
   ".gif": "image/gif",
   ".svg": "image/svg+xml",
+  ".pdf": "application/pdf",
+  ".docx": "application/vnd.openxmlformats-officedocument.wordprocessingml.document",
 };
 
 const server = http.createServer((req, res) => {
-  if (req.url.startsWith("/api/") || req.url.startsWith("/visualizations/")) {
+  if (req.url.startsWith("/api/") || req.url.startsWith("/visualizations/") || req.url.startsWith("/reports/")) {
     proxyApi(req, res);
     return;
   }

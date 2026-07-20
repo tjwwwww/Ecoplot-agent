@@ -2975,6 +2975,22 @@ function showSurveyReport(data) {
   bindSurveyReportExportButtons();
 }
 
+function showSurveyExportLink(anchorButton, url, format) {
+  const actions = anchorButton.closest(".survey-report-actions");
+  if (!actions) return;
+  const old = actions.querySelector(`.survey-export-result[data-format="${format}"]`);
+  if (old) old.remove();
+  const label = format === "docx" ? "Word" : format.toUpperCase();
+  const link = document.createElement("a");
+  link.className = "survey-export-result";
+  link.dataset.format = format;
+  link.href = url;
+  link.target = "_blank";
+  link.rel = "noopener";
+  link.textContent = `\u4e0b\u8f7d ${label} \u6587\u4ef6`;
+  actions.appendChild(link);
+}
+
 function bindSurveyReportExportButtons() {
   document.querySelectorAll(".survey-report-export").forEach((button) => {
     button.addEventListener("click", async () => {
@@ -2993,9 +3009,15 @@ function bindSurveyReportExportButtons() {
         }
         const url = data.file_urls?.[format];
         if (url) {
-          window.open(url, "_blank", "noopener");
+          const absoluteUrl = new URL(url, window.location.origin).href;
+          showSurveyExportLink(button, absoluteUrl, format);
+          const opened = window.open(absoluteUrl, "_blank", "noopener");
+          if (!opened) {
+            alert("\u5bfc\u51fa\u5b8c\u6210\uff0c\u8bf7\u70b9\u51fb\u9875\u9762\u4e0a\u65b0\u751f\u6210\u7684\u4e0b\u8f7d\u94fe\u63a5\u3002");
+          }
         } else {
-          alert("\u5bfc\u51fa\u5b8c\u6210\uff0c\u4f46\u672a\u8fd4\u56de\u6587\u4ef6\u94fe\u63a5\u3002");
+          const errorText = data.export_errors?.[format] || data.message || "\u670d\u52a1\u7aef\u672a\u8fd4\u56de\u76ee\u6807\u6587\u4ef6\u3002";
+          alert("\u5bfc\u51fa\u5931\u8d25: " + errorText);
         }
       } catch (err) {
         alert("\u5bfc\u51fa\u5931\u8d25: " + err.message);

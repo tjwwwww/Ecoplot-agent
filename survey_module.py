@@ -1788,14 +1788,20 @@ def export_existing_report(report_file: str, formats: _ReportAny) -> _ReportDict
     if not markdown_path.exists():
         return {"status": "not_found", "message": f"Report file not found: {safe_name}"}
     export_result = _export_survey_report_files(markdown_path, formats=formats)
+    files = export_result.get("files", {"md": safe_name})
+    requested = export_result.get("requested_formats", [])
+    errors = export_result.get("export_errors", {})
+    missing = [fmt for fmt in requested if fmt != "md" and not files.get(fmt)]
+    status = "success" if not missing and not errors else "error"
     return {
-        "status": "success" if not export_result.get("export_errors") else "partial_success",
+        "status": status,
         "report_file": safe_name,
-        "files": export_result.get("files", {"md": safe_name}),
-        "requested_formats": export_result.get("requested_formats", []),
-        "export_errors": export_result.get("export_errors", {}),
-        "docx_file": export_result.get("files", {}).get("docx"),
-        "pdf_file": export_result.get("files", {}).get("pdf"),
+        "files": files,
+        "requested_formats": requested,
+        "export_errors": errors,
+        "docx_file": files.get("docx"),
+        "pdf_file": files.get("pdf"),
+        "message": "; ".join(f"{fmt}: {errors.get(fmt, 'export file was not created')}" for fmt in missing) if missing else "",
     }
 
 
