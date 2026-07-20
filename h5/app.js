@@ -2199,8 +2199,8 @@ function renderSurveyPlanningMessages() {
 
 function buildSurveyPlanningChatPrompt(userText) {
   return [
-    "??????????????????????????????????????????",
-    "??????????????????????????????????????????1-2???????",
+    "????????????????????????????????????????????????",
+    "????????????????????????????????????????????????1-2???????",
     "????????????/???????????????????????",
     "????????????????? JSON?",
     "",
@@ -2255,8 +2255,8 @@ function buildSurveyPlanRequestFromChat() {
     "",
     "## ????",
     "???????????????????????????",
-    "??????????????????????????????????????",
-    "?????????????????????????????????????",
+    "????????????????????????????????????????????",
+    "???????????????????????????????????????????",
   ].join("\n");
 }
 
@@ -2401,7 +2401,7 @@ function initSurveyEventListeners() {
   addClickListener(dom.surveyReportBtn, async () => {
     if (!currentPlanId) return;
     try {
-      const resp = await fetch(`/api/survey/plans/${currentPlanId}/report`, {
+      const resp = await fetch(`/api/survey/plans/${currentPlanId}/report?mode=agent&allow_fallback=false`, {
         method: "POST",
       });
       const data = await resp.json();
@@ -2500,6 +2500,11 @@ async function loadSurveyList() {
             <span>📅 ${p.created_at || ""}</span>
           </div>
           ${desc ? `<div class="survey-card-desc">${escapeHtml(desc)}</div>` : ""}
+          <div class="survey-card-actions">
+            <button type="button" class="survey-card-delete" data-plan-id="${p.plan_id}" aria-label="\u5220\u9664\u65b9\u6848">
+              \u5220\u9664
+            </button>
+          </div>
         </div>
       `;
     }).join("");
@@ -2511,12 +2516,47 @@ async function loadSurveyList() {
         openSurveyPlan(pid);
       });
     });
+    dom.surveyList.querySelectorAll(".survey-card-delete").forEach(button => {
+      button.addEventListener("click", async (event) => {
+        event.stopPropagation();
+        const pid = parseInt(button.dataset.planId);
+        await deleteSurveyPlan(pid);
+      });
+    });
   } catch (err) {
     dom.surveyList.innerHTML = `<div class="survey-empty">加载失败: ${err.message}</div>`;
   }
 }
 
 // ---- 打开方案详情 ----
+
+
+async function deleteSurveyPlan(planId) {
+  if (!planId) return;
+  const confirmed = confirm("?????????????????\n\n???????????????????????????????????????????");
+  if (!confirmed) return;
+
+  try {
+    const resp = await fetch(`/api/survey/plans/${planId}?permanent=true&delete_reports=true`, {
+      method: "DELETE",
+    });
+    const data = await resp.json().catch(() => ({}));
+    if (!resp.ok || data.status !== "success") {
+      alert("?????" + (data.detail || data.message || resp.status));
+      return;
+    }
+    if (String(currentPlanId) === String(planId)) {
+      currentPlanId = null;
+      currentSurveyPlan = null;
+      currentSurveyRecommendations = [];
+      dom.surveyDetail?.classList.add("hidden");
+      dom.surveyHome?.classList.remove("hidden");
+    }
+    await loadSurveyList();
+  } catch (err) {
+    alert("?????" + err.message);
+  }
+}
 
 function renderSurveyDetailChatMessages() {
   if (!dom.surveyChatMessages) return;
@@ -2675,6 +2715,10 @@ function renderSurveyRecs(recs) {
             <i data-lucide="${isSkipped ? 'x-circle' : 'skip-forward'}"></i>
             ${isSkipped ? '\u5df2\u8df3\u8fc7' : '\u8df3\u8fc7'}
           </button>
+          <button class="survey-rec-btn remove" data-rec-id="${rec.rec_id}">
+            <i data-lucide="trash-2"></i>
+            \u5220\u9664
+          </button>
         </div>
       </div>
     `;
@@ -2700,9 +2744,38 @@ function renderSurveyRecs(recs) {
       await skipRecommendation(recId);
     });
   });
+  dom.surveyRecList.querySelectorAll(".survey-rec-btn.remove").forEach(btn => {
+    btn.addEventListener("click", async () => {
+      const recId = parseInt(btn.dataset.recId);
+      await removeRecommendationFromPlan(recId);
+    });
+  });
 }
 
 // ---- 打开观察记录弹窗 ----
+
+async function removeRecommendationFromPlan(recId) {
+  if (!recId || !currentPlanId) return;
+  const rec = findCurrentRecommendation(recId);
+  const label = rec?.tree_id ? `\u6811\u6728 ${rec.tree_id}` : `\u65b9\u6848\u4efb\u52a1 ${rec?.subplot_id || recId}`;
+  const confirmed = confirm(`\u786e\u5b9a\u5220\u9664${label}\u5417\uff1f\n\n\u53ea\u4f1a\u4ece\u5f53\u524d\u8c03\u67e5\u65b9\u6848\u4e2d\u5220\u9664\u8fd9\u6761\u4efb\u52a1\uff0c\u4e0d\u4f1a\u5220\u9664\u539f\u59cb\u5355\u6728\u6216\u6837\u5730\u6570\u636e\u3002`);
+  if (!confirmed) return;
+
+  try {
+    const resp = await fetch(`/api/survey/recommendations/${recId}?delete_observation=true`, {
+      method: "DELETE",
+    });
+    const data = await resp.json().catch(() => ({}));
+    if (!resp.ok || data.status !== "success") {
+      alert("\u5220\u9664\u5931\u8d25\uff1a" + (data.detail || data.message || resp.status));
+      return;
+    }
+    await openSurveyPlan(currentPlanId);
+    await loadSurveyList();
+  } catch (err) {
+    alert("\u5220\u9664\u5931\u8d25\uff1a" + err.message);
+  }
+}
 function findCurrentRecommendation(recId) {
   return currentSurveyRecommendations.find((rec) => String(rec.rec_id) === String(recId)) || null;
 }
@@ -2824,27 +2897,38 @@ async function updateRecStatus(recId, status) {
 function showSurveyReport(data) {
   const report = data.report || "";
   const stats = data.stats || {};
+  const reportMode = data.report_mode || "unknown";
+  const totalTasks = Number(stats.total_tasks ?? stats.total ?? 0);
+  const completedTasks = Number(stats.completed_tasks ?? stats.completed ?? 0);
+  const pendingTasks = Number(stats.pending_tasks ?? Math.max(totalTasks - completedTasks - Number(stats.skipped || 0), 0));
+  const completionRate = totalTasks > 0 ? Math.round((completedTasks / totalTasks) * 1000) / 10 : Number(stats.completion_rate || 0);
+
+  const modeHtml = `
+    <div style="margin-bottom:10px;padding:8px 10px;border-radius:8px;background:#f4f7f5;color:var(--muted);font-size:12px;">
+      \u751f\u6210\u6a21\u5f0f\uff1a${escapeHtml(reportMode)}
+    </div>
+  `;
 
   const statsHtml = `
     <div style="display:grid;grid-template-columns:repeat(3,1fr);gap:8px;margin-bottom:14px;">
       <div style="padding:10px;border-radius:8px;background:#edf6f1;text-align:center;">
-        <div style="font-size:24px;font-weight:750;color:var(--green-800);">${stats.completed || 0}</div>
-        <div style="font-size:12px;color:var(--muted);">已完成</div>
+        <div style="font-size:24px;font-weight:750;color:var(--green-800);">${completedTasks}</div>
+        <div style="font-size:12px;color:var(--muted);">\u5df2\u5b8c\u6210</div>
       </div>
       <div style="padding:10px;border-radius:8px;background:#fff2e7;text-align:center;">
-        <div style="font-size:24px;font-weight:750;color:var(--warning);">${stats.total - stats.completed - stats.skipped || 0}</div>
-        <div style="font-size:12px;color:var(--muted);">待完成</div>
+        <div style="font-size:24px;font-weight:750;color:var(--warning);">${pendingTasks}</div>
+        <div style="font-size:12px;color:var(--muted);">\u5f85\u5b8c\u6210</div>
       </div>
       <div style="padding:10px;border-radius:8px;background:#e8f4ee;text-align:center;">
-        <div style="font-size:24px;font-weight:750;color:#3d8b63;">${stats.completion_rate || 0}%</div>
-        <div style="font-size:12px;color:var(--muted);">完成率</div>
+        <div style="font-size:24px;font-weight:750;color:#3d8b63;">${completionRate}%</div>
+        <div style="font-size:12px;color:var(--muted);">\u5b8c\u6210\u7387</div>
       </div>
     </div>
   `;
-
   // 在报告按钮上方插入报告内容
   const reportHtml = `
     <div class="survey-report-view">
+      ${modeHtml}
       ${statsHtml}
       <pre style="white-space:pre-wrap;font-family:inherit;margin:0;">${escapeHtml(report)}</pre>
     </div>
